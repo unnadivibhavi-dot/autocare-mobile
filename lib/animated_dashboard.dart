@@ -4,20 +4,268 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart' show TickerCanceled;
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'app_theme.dart';
 import 'customers_screen.dart';
 import 'vehicles_screen.dart';
 import 'billing_dashboard_screen.dart';
 
-class _DashboardColors {
-  static const gold = Color(0xFFF7B22C);
-  static const coffee = Color(0xFF3C312B);
-  static const olive = Color(0xFF403E2D);
-  static const beige = Color(0xFFD7C3A5);
+// Reusable outline icons for the dashboard and navigation.
+enum AutoCareIconType { service, car, people, addPerson, box, home, person }
 
-  static const border = Color(0xFF81735E);
-  static const text = Color(0xFFFFEED7);
+class AutoCareLineIcon extends StatelessWidget {
+  final AutoCareIconType type;
+  final double size;
+  final Color color;
+
+  const AutoCareLineIcon({
+    super.key,
+    required this.type,
+    this.size = 28,
+    this.color = AppColors.accent,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ExcludeSemantics(
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: CustomPaint(
+          painter: _AutoCareIconPainter(type: type, color: color),
+        ),
+      ),
+    );
+  }
 }
 
+class _AutoCareIconPainter extends CustomPainter {
+  final AutoCareIconType type;
+  final Color color;
+
+  _AutoCareIconPainter({required this.type, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final scale = math.min(size.width, size.height) / 64;
+
+    canvas.save();
+
+    canvas.translate(
+      (size.width - 64 * scale) / 2,
+      (size.height - 64 * scale) / 2,
+    );
+
+    canvas.scale(scale);
+
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    switch (type) {
+      case AutoCareIconType.car:
+        _car(canvas, paint);
+        break;
+
+      case AutoCareIconType.people:
+        _people(canvas, paint);
+        break;
+
+      case AutoCareIconType.addPerson:
+        _addPerson(canvas, paint);
+        break;
+
+      case AutoCareIconType.box:
+        _box(canvas, paint);
+        break;
+
+      case AutoCareIconType.home:
+        _home(canvas, paint);
+        break;
+
+      case AutoCareIconType.person:
+        _person(canvas, paint);
+        break;
+
+      case AutoCareIconType.service:
+        _service(canvas, paint);
+        break;
+    }
+
+    canvas.restore();
+  }
+
+  void _car(Canvas canvas, Paint paint) {
+    final roof = Path()
+      ..moveTo(16, 29)
+      ..cubicTo(20, 15, 22, 13, 32, 13)
+      ..cubicTo(42, 13, 44, 15, 48, 29);
+
+    canvas.drawPath(roof, paint);
+
+    final body = Path()
+      ..moveTo(14, 29)
+      ..cubicTo(10, 30, 8, 34, 8, 40)
+      ..lineTo(8, 50)
+      ..quadraticBezierTo(8, 54, 12, 54)
+      ..lineTo(16, 54)
+      ..quadraticBezierTo(19, 54, 19, 49)
+      ..lineTo(45, 49)
+      ..quadraticBezierTo(45, 54, 48, 54)
+      ..lineTo(52, 54)
+      ..quadraticBezierTo(56, 54, 56, 50)
+      ..lineTo(56, 40)
+      ..cubicTo(56, 34, 54, 30, 50, 29)
+      ..close();
+
+    canvas.drawPath(body, paint);
+
+    final windshield = Path()
+      ..moveTo(16, 29)
+      ..quadraticBezierTo(32, 32, 48, 29);
+
+    canvas.drawPath(windshield, paint);
+
+    canvas.drawLine(const Offset(12, 38), const Offset(21, 40), paint);
+
+    canvas.drawLine(const Offset(43, 40), const Offset(52, 38), paint);
+
+    canvas.drawLine(const Offset(27, 44), const Offset(37, 44), paint);
+
+    canvas.drawLine(const Offset(10, 28), const Offset(5, 26), paint);
+
+    canvas.drawLine(const Offset(54, 28), const Offset(59, 26), paint);
+  }
+
+  void _people(Canvas canvas, Paint paint) {
+    canvas.drawCircle(const Offset(24, 20), 8, paint);
+
+    final first = Path()
+      ..moveTo(9, 51)
+      ..lineTo(10, 45)
+      ..cubicTo(12, 32, 36, 32, 38, 45)
+      ..lineTo(39, 51);
+
+    canvas.drawPath(first, paint);
+
+    final secondHead = Path()
+      ..moveTo(40, 13)
+      ..cubicTo(51, 10, 55, 28, 43, 29);
+
+    canvas.drawPath(secondHead, paint);
+
+    final secondBody = Path()
+      ..moveTo(43, 36)
+      ..cubicTo(53, 35, 58, 41, 58, 51);
+
+    canvas.drawPath(secondBody, paint);
+  }
+
+  void _person(Canvas canvas, Paint paint) {
+    canvas.drawCircle(const Offset(32, 20), 9, paint);
+
+    final body = Path()
+      ..moveTo(14, 53)
+      ..lineTo(15, 46)
+      ..cubicTo(17, 31, 47, 31, 49, 46)
+      ..lineTo(50, 53)
+      ..close();
+
+    canvas.drawPath(body, paint);
+  }
+
+  void _addPerson(Canvas canvas, Paint paint) {
+    canvas.drawCircle(const Offset(24, 20), 8, paint);
+
+    final body = Path()
+      ..moveTo(9, 52)
+      ..lineTo(10, 45)
+      ..cubicTo(12, 32, 35, 32, 38, 43);
+
+    canvas.drawPath(body, paint);
+
+    canvas.drawLine(const Offset(48, 35), const Offset(48, 53), paint);
+
+    canvas.drawLine(const Offset(39, 44), const Offset(57, 44), paint);
+  }
+
+  void _box(Canvas canvas, Paint paint) {
+    final outline = Path()
+      ..moveTo(32, 9)
+      ..lineTo(53, 21)
+      ..lineTo(53, 44)
+      ..lineTo(32, 56)
+      ..lineTo(11, 44)
+      ..lineTo(11, 21)
+      ..close();
+
+    canvas.drawPath(outline, paint);
+
+    final inside = Path()
+      ..moveTo(11, 21)
+      ..lineTo(32, 33)
+      ..lineTo(53, 21)
+      ..moveTo(32, 33)
+      ..lineTo(32, 56)
+      ..moveTo(22, 15)
+      ..lineTo(43, 27);
+
+    canvas.drawPath(inside, paint);
+  }
+
+  void _home(Canvas canvas, Paint paint) {
+    final home = Path()
+      ..moveTo(8, 29)
+      ..lineTo(32, 9)
+      ..lineTo(56, 29)
+      ..moveTo(14, 25)
+      ..lineTo(14, 54)
+      ..lineTo(27, 54)
+      ..lineTo(27, 38)
+      ..lineTo(37, 38)
+      ..lineTo(37, 54)
+      ..lineTo(50, 54)
+      ..lineTo(50, 25);
+
+    canvas.drawPath(home, paint);
+  }
+
+  void _service(Canvas canvas, Paint paint) {
+    canvas.save();
+    canvas.translate(-1, -4);
+    canvas.scale(0.85);
+    _car(canvas, paint);
+    canvas.restore();
+
+    canvas.save();
+    canvas.translate(47, 43);
+    canvas.rotate(0.65);
+
+    final tool = Path()
+      ..moveTo(-5, -8)
+      ..cubicTo(-9, -3, -7, 3, -3, 5)
+      ..lineTo(-3, 15)
+      ..quadraticBezierTo(0, 18, 3, 15)
+      ..lineTo(3, 5)
+      ..cubicTo(8, 2, 8, -4, 4, -8)
+      ..lineTo(4, -2)
+      ..lineTo(0, 1)
+      ..lineTo(-4, -2)
+      ..close();
+
+    canvas.drawPath(tool, paint);
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _AutoCareIconPainter oldDelegate) {
+    return oldDelegate.type != type || oldDelegate.color != color;
+  }
+}
+
+// Reference-style dashboard.
 class AnimatedDashboard extends StatefulWidget {
   final ValueChanged<int> onSelectTab;
   final ValueChanged<Widget> onOpen;
@@ -35,7 +283,7 @@ class AnimatedDashboard extends StatefulWidget {
 class _AnimatedDashboardState extends State<AnimatedDashboard>
     with TickerProviderStateMixin {
   late final AnimationController _entrance;
-  late final AnimationController _road;
+  late final AnimationController _float;
 
   late final List<Animation<double>> _sections;
 
@@ -51,17 +299,17 @@ class _AnimatedDashboardState extends State<AnimatedDashboard>
 
     _entrance = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1500),
+      duration: const Duration(milliseconds: 1100),
     );
 
-    _road = AnimationController(
+    _float = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 5),
     );
 
-    _sections = List.generate(9, (index) {
+    _sections = List.generate(8, (index) {
       final start = index * 0.065;
-      final end = math.min(start + 0.42, 1.0);
+      final end = math.min(start + 0.45, 1.0);
 
       return _entrance.drive(
         CurveTween(curve: Interval(start, end, curve: Curves.easeOutCubic)),
@@ -81,32 +329,25 @@ class _AnimatedDashboardState extends State<AnimatedDashboard>
 
     if (_reduceMotion) {
       _entrance.value = 1;
-      _road.stop();
-      _road.value = 0.5;
+      _float.stop();
+      _float.value = 0;
     } else {
       if (!_started) {
         _entrance.forward();
       }
 
-      if (!_road.isAnimating) {
-        _road.repeat();
+      if (!_float.isAnimating) {
+        _float.repeat();
       }
     }
 
     _started = true;
   }
 
-  void _replay() {
-    if (_reduceMotion) return;
-
-    _entrance.forward(from: 0);
-    _road.repeat();
-  }
-
   @override
   void dispose() {
     _entrance.dispose();
-    _road.dispose();
+    _float.dispose();
     super.dispose();
   }
 
@@ -115,15 +356,12 @@ class _AnimatedDashboardState extends State<AnimatedDashboard>
 
     return FadeTransition(
       opacity: animation,
-      child: AnimatedBuilder(
-        animation: animation,
+      child: SlideTransition(
+        position: Tween<Offset>(
+          begin: const Offset(0, 0.06),
+          end: Offset.zero,
+        ).animate(animation),
         child: child,
-        builder: (context, child) {
-          return Transform.translate(
-            offset: Offset(0, 24 * (1 - animation.value)),
-            child: child,
-          );
-        },
       ),
     );
   }
@@ -132,50 +370,40 @@ class _AnimatedDashboardState extends State<AnimatedDashboard>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text.rich(
-          TextSpan(
-            children: [
-              TextSpan(
-                text: 'Auto',
-                style: TextStyle(color: _DashboardColors.text),
+        titleSpacing: 20,
+        title: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AutoCareLineIcon(type: AutoCareIconType.service, size: 34),
+            SizedBox(width: 10),
+            Text(
+              'AutoCare',
+              style: TextStyle(
+                color: AppColors.text,
+                fontSize: 23,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.7,
               ),
-              TextSpan(
-                text: 'Care',
-                style: TextStyle(color: _DashboardColors.gold),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
         actions: [
-          IconButton(
-            tooltip: 'Replay animations',
-            onPressed: _reduceMotion ? null : _replay,
-            icon: const Icon(
-              Icons.replay_rounded,
-              color: _DashboardColors.beige,
-            ),
-          ),
           IconButton(
             tooltip: 'Account',
             onPressed: () => widget.onSelectTab(4),
             icon: const CircleAvatar(
-              radius: 17,
-              backgroundColor: _DashboardColors.coffee,
-              child: Icon(
-                Icons.person_outline,
-                color: _DashboardColors.gold,
-                size: 20,
-              ),
+              radius: 18,
+              backgroundColor: AppColors.accentSoft,
+              child: Icon(Icons.person, color: AppColors.accent, size: 21),
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 12),
         ],
       ),
-
       body: SafeArea(
         top: false,
         child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+          padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 680),
@@ -184,14 +412,13 @@ class _AnimatedDashboardState extends State<AnimatedDashboard>
                 children: [
                   _reveal(0, _hero()),
 
-                  const SizedBox(height: 26),
+                  const SizedBox(height: 24),
 
-                  _reveal(1, _heading('Your workshop', 'Live overview')),
+                  _reveal(1, _sectionTitle('Your workshop')),
 
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 14),
 
                   Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
                         child: _reveal(
@@ -199,19 +426,19 @@ class _AnimatedDashboardState extends State<AnimatedDashboard>
                           _statCard(
                             stream: _customers,
                             label: 'Customers',
-                            icon: Icons.people_outline,
+                            icon: AutoCareIconType.people,
                             onTap: () => widget.onSelectTab(1),
                           ),
                         ),
                       ),
-                      const SizedBox(width: 18),
+                      const SizedBox(width: 12),
                       Expanded(
                         child: _reveal(
                           3,
                           _statCard(
                             stream: _vehicles,
                             label: 'Vehicles',
-                            icon: Icons.directions_car_outlined,
+                            icon: AutoCareIconType.car,
                             onTap: () => widget.onSelectTab(2),
                           ),
                         ),
@@ -219,66 +446,78 @@ class _AnimatedDashboardState extends State<AnimatedDashboard>
                     ],
                   ),
 
-                  const SizedBox(height: 28),
+                  const SizedBox(height: 25),
 
-                  _reveal(4, _heading('Quick actions', 'Manage your day')),
+                  _reveal(4, _sectionTitle('Quick actions')),
 
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 14),
 
                   _reveal(
                     4,
                     _action(
-                      icon: Icons.person_add_alt_1,
                       title: 'Add a customer',
-                      subtitle: 'Save customer contact details.',
+                      icon: const AutoCareLineIcon(
+                        type: AutoCareIconType.addPerson,
+                        size: 31,
+                      ),
                       onTap: () => widget.onOpen(const AddCustomerScreen()),
                     ),
                   ),
 
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 10),
 
                   _reveal(
                     5,
                     _action(
-                      icon: Icons.add_road_rounded,
                       title: 'Register a vehicle',
-                      subtitle: 'Connect a vehicle to its owner.',
+                      icon: const AutoCareLineIcon(
+                        type: AutoCareIconType.car,
+                        size: 31,
+                      ),
                       onTap: () => widget.onOpen(const AddVehicleScreen()),
                     ),
                   ),
 
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 10),
 
                   _reveal(
                     6,
                     _action(
-                      icon: Icons.inventory_2_outlined,
                       title: 'Manage spare parts',
-                      subtitle: 'Check stock and add new parts.',
+                      icon: const AutoCareLineIcon(
+                        type: AutoCareIconType.box,
+                        size: 31,
+                      ),
                       onTap: () => widget.onSelectTab(3),
                     ),
                   ),
 
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 10),
 
                   _reveal(
                     7,
                     _action(
-                      icon: Icons.assignment_outlined,
                       title: 'Bookings & Job Cards',
-                      subtitle: 'Manage each vehicle’s service.',
+                      icon: const Icon(
+                        Icons.assignment_outlined,
+                        color: AppColors.accent,
+                        size: 27,
+                      ),
                       onTap: () => widget.onSelectTab(2),
                     ),
                   ),
 
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 10),
 
                   _reveal(
-                    8,
+                    7,
                     _action(
-                      icon: Icons.receipt_long_outlined,
                       title: 'Billing & payments',
-                      subtitle: 'View invoices and received payments.',
+                      icon: const Icon(
+                        Icons.receipt_long_outlined,
+                        color: AppColors.accent,
+                        size: 27,
+                      ),
                       onTap: () =>
                           widget.onOpen(const BillingDashboardScreen()),
                     ),
@@ -292,97 +531,114 @@ class _AnimatedDashboardState extends State<AnimatedDashboard>
     );
   }
 
+  Widget _sectionTitle(String title) {
+    return Text(
+      title,
+      style: const TextStyle(
+        color: AppColors.text,
+        fontSize: 21,
+        fontWeight: FontWeight.w800,
+        letterSpacing: -0.5,
+      ),
+    );
+  }
+
   Widget _hero() {
     return Container(
-      padding: const EdgeInsets.all(22),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: _DashboardColors.coffee,
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: _DashboardColors.border, width: 0.7),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [AppColors.accentSoft, AppColors.surface],
+        ),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: AppColors.border, width: 0.7),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Container(
-                width: 7,
-                height: 7,
-                decoration: const BoxDecoration(
-                  color: _DashboardColors.gold,
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: 8),
-              const Expanded(
-                child: Text(
-                  'YOUR WORKSHOP COMPANION',
-                  style: TextStyle(
-                    color: _DashboardColors.beige,
-                    fontSize: 9,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1.2,
-                  ),
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 20),
-
           const Text(
-            'Every vehicle.\nEvery detail.',
+            'YOUR WORKSHOP',
             style: TextStyle(
-              color: _DashboardColors.text,
-              fontSize: 31,
+              color: AppColors.accent,
+              fontSize: 11,
               fontWeight: FontWeight.w800,
-              letterSpacing: -0.9,
-              height: 1.15,
+              letterSpacing: 0.6,
             ),
           ),
 
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
 
-          const Text(
-            'Keep your customers, service jobs and '
-            'workshop essentials organised.',
-            style: TextStyle(
-              color: _DashboardColors.beige,
-              fontSize: 13,
-              height: 1.6,
-            ),
-          ),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final compact = constraints.maxWidth < 320;
 
-          const SizedBox(height: 20),
-
-          _animatedRoad(),
-
-          const SizedBox(height: 20),
-
-          _TouchPopCard(
-            onTap: () => widget.onSelectTab(2),
-            borderRadius: 16,
-            backgroundColor: _DashboardColors.gold,
-            child: const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 20, vertical: 18),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+              return Row(
                 children: [
-                  Icon(
-                    Icons.arrow_forward_rounded,
-                    size: 19,
-                    color: _DashboardColors.coffee,
-                  ),
-                  SizedBox(width: 10),
-                  Text(
-                    'Open vehicles',
-                    style: TextStyle(
-                      color: _DashboardColors.coffee,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
+                  Expanded(
+                    child: Text(
+                      'Every vehicle.\nEvery detail.',
+                      style: TextStyle(
+                        color: AppColors.text,
+                        fontSize: compact ? 26 : 31,
+                        fontWeight: FontWeight.w800,
+                        height: 1.12,
+                        letterSpacing: -0.8,
+                      ),
                     ),
                   ),
+                  const SizedBox(width: 8),
+                  AnimatedBuilder(
+                    animation: _float,
+                    child: AutoCareLineIcon(
+                      type: AutoCareIconType.car,
+                      size: compact ? 78 : 100,
+                    ),
+                    builder: (context, child) {
+                      return Transform.translate(
+                        offset: Offset(
+                          0,
+                          math.sin(_float.value * 2 * math.pi) * 2.5,
+                        ),
+                        child: child,
+                      );
+                    },
+                  ),
                 ],
+              );
+            },
+          ),
+
+          const SizedBox(height: 10),
+
+          const Text(
+            'Keep your service centre organised.',
+            style: TextStyle(
+              color: AppColors.text,
+              fontSize: 12.5,
+              height: 1.5,
+            ),
+          ),
+
+          const SizedBox(height: 18),
+
+          Align(
+            alignment: Alignment.centerLeft,
+            child: _TouchPopCard(
+              onTap: () => widget.onSelectTab(2),
+              backgroundColor: AppColors.accent,
+              borderRadius: 14,
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                child: Text(
+                  'Open vehicles',
+                  style: TextStyle(
+                    color: AppColors.navigation,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
               ),
             ),
           ),
@@ -391,163 +647,82 @@ class _AnimatedDashboardState extends State<AnimatedDashboard>
     );
   }
 
-  Widget _animatedRoad() {
-    return ExcludeSemantics(
-      child: Container(
-        height: 64,
-        decoration: BoxDecoration(
-          color: _DashboardColors.olive,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            return AnimatedBuilder(
-              animation: _road,
-              builder: (context, child) {
-                final progress = _road.value;
-
-                final carX = -44 + (constraints.maxWidth + 88) * progress;
-
-                final fade = math
-                    .min(progress / 0.12, (1 - progress) / 0.12)
-                    .clamp(0.0, 1.0)
-                    .toDouble();
-
-                return Stack(
-                  children: [
-                    Positioned.fill(
-                      child: CustomPaint(
-                        painter: _DrivingRoadPainter(progress),
-                      ),
-                    ),
-                    Positioned(
-                      left: carX,
-                      top: 10,
-                      child: Opacity(
-                        opacity: fade,
-                        child: Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            color: _DashboardColors.coffee,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: _DashboardColors.gold),
-                          ),
-                          child: const Icon(
-                            Icons.directions_car_rounded,
-                            color: _DashboardColors.gold,
-                            size: 28,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                );
-              },
-            );
-          },
-        ),
-      ),
-    );
-  }
-
-  Widget _heading(String title, String subtitle) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          title,
-          style: const TextStyle(
-            fontSize: 21,
-            fontWeight: FontWeight.w800,
-            letterSpacing: -0.5,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          subtitle,
-          style: const TextStyle(color: _DashboardColors.beige, fontSize: 12),
-        ),
-      ],
-    );
-  }
-
   Widget _statCard({
     required Stream<QuerySnapshot<Map<String, dynamic>>> stream,
     required String label,
-    required IconData icon,
+    required AutoCareIconType icon,
     required VoidCallback onTap,
   }) {
     return _TouchPopCard(
       onTap: onTap,
-      borderRadius: 22,
+      borderRadius: 18,
       child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 17),
+        child: Row(
           children: [
-            Icon(icon, color: _DashboardColors.gold, size: 27),
+            AutoCareLineIcon(type: icon, size: 34),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                    stream: stream,
+                    builder: (context, snapshot) {
+                      if (snapshot.hasError) {
+                        return const Text(
+                          '—',
+                          style: TextStyle(
+                            color: AppColors.muted,
+                            fontSize: 25,
+                          ),
+                        );
+                      }
 
-            const SizedBox(height: 16),
+                      if (!snapshot.hasData) {
+                        return const SizedBox(
+                          height: 30,
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: SizedBox(
+                              height: 15,
+                              width: 15,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          ),
+                        );
+                      }
 
-            StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-              stream: stream,
-              builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return const Text(
-                    'Unavailable',
-                    style: TextStyle(
-                      color: _DashboardColors.beige,
-                      fontSize: 11,
-                    ),
-                  );
-                }
+                      final count = snapshot.data!.docs.length;
 
-                if (!snapshot.hasData) {
-                  return const SizedBox(
-                    height: 36,
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: SizedBox(
-                        height: 18,
-                        width: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    ),
-                  );
-                }
+                      return TweenAnimationBuilder<double>(
+                        tween: Tween<double>(begin: 0, end: count.toDouble()),
+                        duration: _reduceMotion
+                            ? Duration.zero
+                            : const Duration(milliseconds: 700),
+                        curve: Curves.easeOutCubic,
+                        builder: (context, value, child) {
+                          return Text(
+                            '${value.round()}',
+                            style: const TextStyle(
+                              color: AppColors.text,
+                              fontSize: 25,
+                              fontWeight: FontWeight.w800,
+                              height: 1.1,
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  ),
 
-                final count = snapshot.data!.docs.length;
+                  const SizedBox(height: 5),
 
-                return TweenAnimationBuilder<double>(
-                  tween: Tween<double>(begin: 0, end: count.toDouble()),
-                  duration: _reduceMotion
-                      ? Duration.zero
-                      : const Duration(milliseconds: 1000),
-                  curve: Curves.easeOutCubic,
-                  builder: (context, value, child) {
-                    return Text(
-                      '${value.round()}',
-                      style: const TextStyle(
-                        color: _DashboardColors.text,
-                        fontSize: 32,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -1,
-                      ),
-                    );
-                  },
-                );
-              },
-            ),
-
-            const SizedBox(height: 4),
-
-            Text(
-              label,
-              style: const TextStyle(
-                color: _DashboardColors.beige,
-                fontSize: 12,
+                  Text(
+                    label,
+                    style: const TextStyle(color: AppColors.text, fontSize: 11),
+                  ),
+                ],
               ),
             ),
           ],
@@ -557,59 +732,34 @@ class _AnimatedDashboardState extends State<AnimatedDashboard>
   }
 
   Widget _action({
-    required IconData icon,
     required String title,
-    required String subtitle,
+    required Widget icon,
     required VoidCallback onTap,
   }) {
     return _TouchPopCard(
       onTap: onTap,
-      borderRadius: 20,
+      borderRadius: 16,
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
         child: Row(
           children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: _DashboardColors.olive,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Icon(icon, color: _DashboardColors.gold, size: 23),
-            ),
-
-            const SizedBox(width: 14),
-
+            icon,
+            const SizedBox(width: 15),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      color: _DashboardColors.text,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 5),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(
-                      color: _DashboardColors.beige,
-                      fontSize: 12,
-                      height: 1.5,
-                    ),
-                  ),
-                ],
+              child: Text(
+                title,
+                style: const TextStyle(
+                  color: AppColors.text,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
             ),
-
             const SizedBox(width: 8),
-
             const Icon(
               Icons.chevron_right_rounded,
-              color: _DashboardColors.beige,
+              color: AppColors.muted,
+              size: 21,
             ),
           ],
         ),
@@ -618,50 +768,7 @@ class _AnimatedDashboardState extends State<AnimatedDashboard>
   }
 }
 
-// Road animation
-class _DrivingRoadPainter extends CustomPainter {
-  final double progress;
-
-  _DrivingRoadPainter(this.progress);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final edgePaint = Paint()
-      ..color = const Color(0x667D715A)
-      ..strokeWidth = 1;
-
-    canvas.drawLine(Offset(0, 9), Offset(size.width, 9), edgePaint);
-
-    canvas.drawLine(
-      Offset(0, size.height - 9),
-      Offset(size.width, size.height - 9),
-      edgePaint,
-    );
-
-    final dashPaint = Paint()..color = _DashboardColors.gold;
-
-    const spacing = 38.0;
-    final shift = -progress * spacing;
-
-    for (double x = shift; x < size.width; x += spacing) {
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(x, size.height / 2 - 1.5, 22, 3),
-          const Radius.circular(2),
-        ),
-        dashPaint,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _DrivingRoadPainter oldDelegate) {
-    return oldDelegate.progress != progress;
-  }
-}
-
-// Android touch pop animation.
-// The page opens only after the animation finishes.
+// Touch pop animation before navigation.
 class _TouchPopCard extends StatefulWidget {
   final Widget child;
   final VoidCallback onTap;
@@ -672,7 +779,7 @@ class _TouchPopCard extends StatefulWidget {
     required this.child,
     required this.onTap,
     this.borderRadius = 20,
-    this.backgroundColor = _DashboardColors.coffee,
+    this.backgroundColor = AppColors.surface,
   });
 
   @override
@@ -693,7 +800,7 @@ class _TouchPopCardState extends State<_TouchPopCard>
 
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 240),
+      duration: const Duration(milliseconds: 220),
     );
 
     _scale = _controller.drive(
@@ -701,13 +808,13 @@ class _TouchPopCardState extends State<_TouchPopCard>
         TweenSequenceItem(
           tween: Tween<double>(
             begin: 1,
-            end: 1.045,
+            end: 1.035,
           ).chain(CurveTween(curve: Curves.easeOutCubic)),
           weight: 45,
         ),
         TweenSequenceItem(
           tween: Tween<double>(
-            begin: 1.045,
+            begin: 1.035,
             end: 1,
           ).chain(CurveTween(curve: Curves.easeInOutCubic)),
           weight: 55,
@@ -719,9 +826,7 @@ class _TouchPopCardState extends State<_TouchPopCard>
   Future<void> _activate() async {
     if (_busy) return;
 
-    final reduceMotion = MediaQuery.of(context).disableAnimations;
-
-    if (reduceMotion) {
+    if (MediaQuery.of(context).disableAnimations) {
       widget.onTap();
       return;
     }
@@ -737,7 +842,6 @@ class _TouchPopCardState extends State<_TouchPopCard>
     if (!mounted) return;
 
     setState(() => _busy = false);
-
     widget.onTap();
   }
 
@@ -758,56 +862,37 @@ class _TouchPopCardState extends State<_TouchPopCard>
     final reduceMotion = MediaQuery.of(context).disableAnimations;
 
     final active = _busy || _hovered;
-    final isGold = widget.backgroundColor == _DashboardColors.gold;
 
-    final duration = reduceMotion
-        ? Duration.zero
-        : const Duration(milliseconds: 160);
+    final isAccent = widget.backgroundColor == AppColors.accent;
 
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       onEnter: (_) => _setHovered(true),
       onExit: (_) => _setHovered(false),
       child: AnimatedScale(
-        scale: _hovered && !_busy && !reduceMotion ? 1.015 : 1,
-        duration: duration,
-        curve: Curves.easeOutCubic,
+        scale: _hovered && !_busy && !reduceMotion ? 1.012 : 1,
+        duration: reduceMotion
+            ? Duration.zero
+            : const Duration(milliseconds: 150),
         child: ScaleTransition(
           scale: _scale,
-          child: AnimatedContainer(
-            duration: duration,
-            decoration: BoxDecoration(
+          child: Material(
+            color: widget.backgroundColor,
+            shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(widget.borderRadius),
-              boxShadow: [
-                BoxShadow(
-                  color: active
-                      ? const Color(0x44000000)
-                      : const Color(0x00000000),
-                  blurRadius: active ? 18 : 0,
-                  offset: Offset(0, active ? 8 : 0),
-                ),
-              ],
+              side: BorderSide(
+                color: active || isAccent ? AppColors.accent : AppColors.border,
+                width: active ? 1.1 : 0.7,
+              ),
             ),
-            child: Material(
-              color: widget.backgroundColor,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(widget.borderRadius),
-                side: BorderSide(
-                  color: active || isGold
-                      ? _DashboardColors.gold
-                      : _DashboardColors.border,
-                  width: active ? 1.2 : 0.7,
-                ),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: InkWell(
-                onTap: _activate,
-                splashColor: isGold
-                    ? const Color(0x223C312B)
-                    : const Color(0x33F7B22C),
-                highlightColor: Colors.transparent,
-                child: widget.child,
-              ),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: _activate,
+              splashColor: isAccent
+                  ? const Color(0x221B242E)
+                  : const Color(0x33A8C4D9),
+              highlightColor: Colors.transparent,
+              child: widget.child,
             ),
           ),
         ),

@@ -10,7 +10,6 @@ int? parsePartPrice(String value) {
   }
 
   final pieces = text.split('.');
-
   final whole = int.parse(pieces[0]);
 
   final fraction = pieces.length == 2
@@ -59,8 +58,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
   bool _matchesSearch(String partCode, Map<String, dynamic> data) {
     if (_query.isEmpty) return true;
 
-    final name = (data['name'] as String? ?? '').toLowerCase();
-
+    final name = (data['name']?.toString() ?? '').toLowerCase();
     final code = partCode.toLowerCase();
 
     if (name.contains(_query) || code.contains(_query)) {
@@ -86,6 +84,121 @@ class _InventoryScreenState extends State<InventoryScreen> {
         .push(MaterialPageRoute<void>(builder: (_) => const AddPartScreen()));
   }
 
+  void _openEditPart(QueryDocumentSnapshot<Map<String, dynamic>> part) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            EditPartScreen(partCode: part.id, initialData: part.data()),
+      ),
+    );
+  }
+
+  void _openRestock(QueryDocumentSnapshot<Map<String, dynamic>> part) {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _RestockDialog(
+        reference: part.reference,
+        name: part.data()['name'] as String,
+      ),
+    );
+  }
+
+  Widget _partCard(QueryDocumentSnapshot<Map<String, dynamic>> part) {
+    final data = part.data();
+
+    final stock = data['stock'] as int;
+    final minimum = data['minStock'] as int;
+    final lowStock = stock <= minimum;
+    final colors = Theme.of(context).colorScheme;
+
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.inventory_2_outlined,
+                  color: colors.primary,
+                  size: 28,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    data['name'] as String,
+                    style: const TextStyle(
+                      fontSize: 19,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Edit part details',
+                  onPressed: () => _openEditPart(part),
+                  icon: Icon(Icons.edit_outlined, color: colors.primary),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Code: ${part.id}',
+              style: TextStyle(color: colors.onSurfaceVariant, fontSize: 12),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Unit price: LKR '
+              '${formatPartPrice(data['unitPriceCents'] as int)}',
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 8),
+            Text('Available: $stock • Minimum: $minimum'),
+            if (lowStock) ...[
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Icon(
+                    Icons.warning_amber_rounded,
+                    size: 20,
+                    color: stock == 0 ? colors.error : colors.primary,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    stock == 0 ? 'OUT OF STOCK' : 'LOW STOCK',
+                    style: TextStyle(
+                      color: stock == 0 ? colors.error : colors.primary,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 10,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () => _openRestock(part),
+                  icon: const Icon(Icons.add_box_outlined),
+                  label: const Text('Add Stock'),
+                ),
+                TextButton.icon(
+                  onPressed: () => _openEditPart(part),
+                  icon: const Icon(Icons.edit_outlined, size: 19),
+                  label: const Text('Edit Details'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _searchController.dispose();
@@ -96,13 +209,11 @@ class _InventoryScreenState extends State<InventoryScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Spare Parts')),
-
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _openAddPart,
         icon: const Icon(Icons.add),
         label: const Text('Add Part'),
       ),
-
       body: Column(
         children: [
           Padding(
@@ -118,21 +229,17 @@ class _InventoryScreenState extends State<InventoryScreen> {
                         tooltip: 'Clear search',
                         onPressed: () {
                           _searchController.clear();
-
                           setState(() => _query = '');
                         },
                         icon: const Icon(Icons.close),
                       ),
               ),
               onChanged: (value) {
-                setState(() {
-                  _query = value.trim().toLowerCase();
-                });
+                setState(() => _query = value.trim().toLowerCase());
               },
             ),
           ),
-
-          SwitchListTile(
+          SwitchListTile.adaptive(
             title: const Text('Low stock only'),
             subtitle: const Text('At or below the minimum stock level'),
             value: _lowStockOnly,
@@ -140,7 +247,6 @@ class _InventoryScreenState extends State<InventoryScreen> {
               setState(() => _lowStockOnly = value);
             },
           ),
-
           Expanded(
             child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
               stream: _parts,
@@ -192,27 +298,22 @@ class _InventoryScreenState extends State<InventoryScreen> {
                     Padding(
                       padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
                       child: Text(
-                        '${visibleParts.length} of '
-                        '${allParts.length} parts'
+                        '${visibleParts.length} of ${allParts.length} parts'
                         ' • $lowStockCount low stock',
                         style: const TextStyle(fontSize: 12),
                       ),
                     ),
-
                     Expanded(
                       child: visibleParts.isEmpty
                           ? Center(
-                              child: Padding(
+                              child: SingleChildScrollView(
                                 padding: const EdgeInsets.all(24),
                                 child: Column(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     const Icon(Icons.search_off, size: 48),
                                     const SizedBox(height: 14),
-                                    const Text(
-                                      'No parts match these filters.',
-                                      textAlign: TextAlign.center,
-                                    ),
+                                    const Text('No parts match these filters.'),
                                     const SizedBox(height: 12),
                                     TextButton(
                                       onPressed: _clearFilters,
@@ -229,115 +330,13 @@ class _InventoryScreenState extends State<InventoryScreen> {
                                 16,
                                 0,
                                 16,
-                                100,
+                                110,
                               ),
                               itemCount: visibleParts.length,
                               separatorBuilder: (_, __) =>
                                   const SizedBox(height: 12),
                               itemBuilder: (context, index) {
-                                final part = visibleParts[index];
-                                final data = part.data();
-
-                                final stock = data['stock'] as int;
-                                final minimum = data['minStock'] as int;
-
-                                final lowStock = stock <= minimum;
-
-                                return Card(
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(18),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.stretch,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            Icon(
-                                              Icons.inventory_2_outlined,
-                                              color: Theme.of(context)
-                                                  .colorScheme
-                                                  .primary,
-                                            ),
-                                            const SizedBox(width: 12),
-                                            Expanded(
-                                              child: Text(
-                                                data['name'] as String,
-                                                style: const TextStyle(
-                                                  fontSize: 19,
-                                                  fontWeight: FontWeight.w800,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-
-                                        const SizedBox(height: 12),
-
-                                        Text('Code: ${part.id}'),
-
-                                        const SizedBox(height: 8),
-
-                                        Text(
-                                          'Unit price: LKR '
-                                          '${formatPartPrice(data['unitPriceCents'] as int)}',
-                                        ),
-
-                                        const SizedBox(height: 8),
-
-                                        Text(
-                                          'Available: $stock'
-                                          ' • Minimum: $minimum',
-                                        ),
-
-                                        if (lowStock) ...[
-                                          const SizedBox(height: 12),
-                                          Row(
-                                            children: [
-                                              Icon(
-                                                Icons.warning_amber_rounded,
-                                                size: 20,
-                                                color: Theme.of(context)
-                                                    .colorScheme
-                                                    .primary,
-                                              ),
-                                              const SizedBox(width: 8),
-                                              Text(
-                                                stock == 0
-                                                    ? 'OUT OF STOCK'
-                                                    : 'LOW STOCK',
-                                                style: TextStyle(
-                                                  color: Theme.of(context)
-                                                      .colorScheme
-                                                      .primary,
-                                                  fontWeight: FontWeight.w800,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-
-                                        const SizedBox(height: 16),
-
-                                        OutlinedButton.icon(
-                                          onPressed: () {
-                                            showDialog<void>(
-                                              context: context,
-                                              barrierDismissible: false,
-                                              builder: (_) => _RestockDialog(
-                                                reference: part.reference,
-                                                name: data['name'] as String,
-                                              ),
-                                            );
-                                          },
-                                          icon: const Icon(
-                                            Icons.add_box_outlined,
-                                          ),
-                                          label: const Text('Add Stock'),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                );
+                                return _partCard(visibleParts[index]);
                               },
                             ),
                     ),
@@ -352,104 +351,201 @@ class _InventoryScreenState extends State<InventoryScreen> {
   }
 }
 
-class AddPartScreen extends StatefulWidget {
+// Keep this public screen available to existing navigation.
+class AddPartScreen extends StatelessWidget {
   const AddPartScreen({super.key});
 
   @override
-  State<AddPartScreen> createState() => _AddPartScreenState();
+  Widget build(BuildContext context) {
+    return const _PartFormScreen();
+  }
 }
 
-class _AddPartScreenState extends State<AddPartScreen> {
+class EditPartScreen extends StatelessWidget {
+  final String partCode;
+  final Map<String, dynamic> initialData;
+
+  const EditPartScreen({
+    super.key,
+    required this.partCode,
+    required this.initialData,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _PartFormScreen(partCode: partCode, initialData: initialData);
+  }
+}
+
+class _PartFormScreen extends StatefulWidget {
+  final String? partCode;
+  final Map<String, dynamic>? initialData;
+
+  const _PartFormScreen({this.partCode, this.initialData});
+
+  @override
+  State<_PartFormScreen> createState() => _PartFormScreenState();
+}
+
+class _PartFormScreenState extends State<_PartFormScreen> {
   final _formKey = GlobalKey<FormState>();
 
-  final _code = TextEditingController();
-  final _name = TextEditingController();
-  final _price = TextEditingController();
-  final _stock = TextEditingController(text: '0');
-  final _minimum = TextEditingController(text: '5');
+  late final TextEditingController _code;
+  late final TextEditingController _name;
+  late final TextEditingController _price;
+  late final TextEditingController _stock;
+  late final TextEditingController _minimum;
+
+  late final Map<String, dynamic> _originalDetails;
 
   bool _saving = false;
 
-  String? _quantityValidator(String? value) {
-    final quantity = int.tryParse(value?.trim() ?? '');
+  bool get _editing => widget.partCode != null;
 
-    if (quantity == null || quantity < 0 || quantity > 1000000) {
+  @override
+  void initState() {
+    super.initState();
+
+    final data = widget.initialData ?? <String, dynamic>{};
+
+    _originalDetails = {
+      'name': data['name'],
+      'unitPriceCents': data['unitPriceCents'],
+      'minStock': data['minStock'],
+    };
+
+    _code = TextEditingController(text: widget.partCode ?? '');
+    _name = TextEditingController(text: data['name']?.toString() ?? '');
+
+    _price = TextEditingController(
+      text: _editing ? formatPartPrice(data['unitPriceCents'] as int) : '',
+    );
+
+    _stock = TextEditingController(text: (data['stock'] ?? 0).toString());
+
+    _minimum = TextEditingController(text: (data['minStock'] ?? 5).toString());
+  }
+
+  String? _quantityValidator(String? value) {
+    final text = value?.trim() ?? '';
+    final quantity = int.tryParse(text);
+
+    if (!RegExp(r'^\d+$').hasMatch(text) ||
+        quantity == null ||
+        quantity < 0 ||
+        quantity > 1000000) {
       return 'Enter a whole number from 0 to 1000000.';
     }
 
     return null;
   }
 
+  void _message(String text) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+  }
+
   Future<void> _save() async {
-    if (_saving || !_formKey.currentState!.validate()) {
-      return;
-    }
+    if (_saving || !_formKey.currentState!.validate()) return;
 
     FocusScope.of(context).unfocus();
 
     final code = _code.text.trim().toUpperCase();
     final name = _name.text.trim();
     final price = parsePartPrice(_price.text)!;
-    final stock = int.parse(_stock.text.trim());
     final minimum = int.parse(_minimum.text.trim());
 
-    setState(() => _saving = true);
+    final details = <String, dynamic>{
+      'name': name,
+      'unitPriceCents': price,
+      'minStock': minimum,
+    };
+
+    if (_editing &&
+        details.entries.every(
+          (entry) => entry.value == _originalDetails[entry.key],
+        )) {
+      Navigator.of(context).pop();
+      return;
+    }
+
+    final openingStock = _editing ? 0 : int.parse(_stock.text.trim());
 
     final reference = FirebaseFirestore.instance
         .collection('spareParts')
-        .doc(code);
+        .doc(_editing ? widget.partCode! : code);
+
+    setState(() => _saving = true);
 
     try {
       await FirebaseFirestore.instance.runTransaction<void>((
         transaction,
       ) async {
-        final existing = await transaction.get(reference);
+        final snapshot = await transaction.get(reference);
 
-        if (existing.exists) {
-          throw StateError(
-            'This part code already exists. '
-            'Use Add Stock instead.',
+        if (_editing) {
+          final current = snapshot.data();
+
+          if (current == null) {
+            throw const _InventoryException(
+              'This part no longer exists. '
+              'Go back and reopen the inventory.',
+            );
+          }
+
+          // Stock may change independently while this form is open.
+          // Only detect conflicts in the details being edited.
+          final changedElsewhere = _originalDetails.entries.any(
+            (entry) => current[entry.key] != entry.value,
           );
-        }
 
-        transaction.set(reference, {
-          'name': name,
-          'unitPriceCents': price,
-          'stock': stock,
-          'minStock': minimum,
-          'createdAt': FieldValue.serverTimestamp(),
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
+          if (changedElsewhere) {
+            throw const _InventoryException(
+              'Part details changed on another device. '
+              'Go back and reopen Edit to load the latest details.',
+            );
+          }
+
+          transaction.update(reference, {
+            ...details,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        } else {
+          if (snapshot.exists) {
+            throw const _InventoryException(
+              'This part code already exists. '
+              'Use Edit Details or Add Stock instead.',
+            );
+          }
+
+          transaction.set(reference, {
+            ...details,
+            'stock': openingStock,
+            'createdAt': FieldValue.serverTimestamp(),
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        }
       });
 
       if (!mounted) return;
 
-      Navigator.of(context).pop();
-    } on StateError catch (error) {
-      if (mounted) {
-        _message('${error.message}');
-      }
-    } on FirebaseException catch (error) {
-      if (!mounted) return;
+      _message(_editing ? 'Part details updated.' : 'Part added successfully.');
 
+      Navigator.of(context).pop();
+    } on _InventoryException catch (error) {
+      _message(error.message);
+    } on FirebaseException catch (error) {
       _message(
         error.code == 'permission-denied'
-            ? 'Check your UID and spareParts rules.'
-            : 'Unable to save part. Check your connection.',
+            ? 'Permission denied. Check the published spareParts rules.'
+            : 'Unable to save part. Check your connection and try again.',
       );
     } catch (_) {
-      if (mounted) {
-        _message('Unable to save part. Please try again.');
-      }
+      _message('Unable to save part. Please try again.');
     } finally {
-      if (mounted) {
-        setState(() => _saving = false);
-      }
+      if (mounted) setState(() => _saving = false);
     }
-  }
-
-  void _message(String text) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   }
 
   Widget _field({
@@ -459,16 +555,24 @@ class _AddPartScreenState extends State<AddPartScreen> {
     TextInputType keyboard = TextInputType.text,
     int? maxLength,
     String? hint,
+    bool readOnly = false,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 18),
       child: TextFormField(
         controller: controller,
         enabled: !_saving,
+        readOnly: readOnly,
         keyboardType: keyboard,
         textInputAction: TextInputAction.next,
         maxLength: maxLength,
-        decoration: InputDecoration(labelText: label, hintText: hint),
+        decoration: InputDecoration(
+          labelText: label,
+          hintText: hint,
+          suffixIcon: readOnly
+              ? const Icon(Icons.lock_outline, size: 19)
+              : null,
+        ),
         validator: validator,
       ),
     );
@@ -481,17 +585,18 @@ class _AddPartScreenState extends State<AddPartScreen> {
     _price.dispose();
     _stock.dispose();
     _minimum.dispose();
-
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
     return PopScope(
       canPop: !_saving,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Add Spare Part'),
+          title: Text(_editing ? 'Edit Spare Part' : 'Add Spare Part'),
           automaticallyImplyLeading: !_saving,
         ),
         body: SafeArea(
@@ -502,14 +607,41 @@ class _AddPartScreenState extends State<AddPartScreen> {
                 constraints: const BoxConstraints(maxWidth: 480),
                 child: Form(
                   key: _formKey,
+                  autovalidateMode: AutovalidateMode.onUserInteraction,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      Icon(
+                        _editing
+                            ? Icons.edit_note_outlined
+                            : Icons.inventory_2_outlined,
+                        size: 46,
+                        color: colors.primary,
+                      ),
+                      const SizedBox(height: 14),
+                      Text(
+                        _editing ? 'Update part details' : 'Add a spare part',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 23,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _editing
+                            ? 'Update the selling price and stock alert level.'
+                            : 'Set up a part and its opening stock.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: colors.onSurfaceVariant),
+                      ),
+                      const SizedBox(height: 28),
                       _field(
                         controller: _code,
                         label: 'Part code',
                         hint: 'Example: OIL-FILTER-01',
                         maxLength: 30,
+                        readOnly: _editing,
                         validator: (value) {
                           final code = value?.trim().toUpperCase() ?? '';
 
@@ -518,7 +650,6 @@ class _AddPartScreenState extends State<AddPartScreen> {
                               : 'Use letters, numbers, - or _ only.';
                         },
                       ),
-
                       _field(
                         controller: _name,
                         label: 'Part name',
@@ -529,7 +660,6 @@ class _AddPartScreenState extends State<AddPartScreen> {
                               : null;
                         },
                       ),
-
                       _field(
                         controller: _price,
                         label: 'Selling price per unit (LKR)',
@@ -542,25 +672,50 @@ class _AddPartScreenState extends State<AddPartScreen> {
                               : null;
                         },
                       ),
-
-                      _field(
-                        controller: _stock,
-                        label: 'Opening stock quantity',
-                        keyboard: TextInputType.number,
-                        validator: _quantityValidator,
-                      ),
-
+                      if (!_editing)
+                        _field(
+                          controller: _stock,
+                          label: 'Opening stock quantity',
+                          keyboard: TextInputType.number,
+                          validator: _quantityValidator,
+                        ),
                       _field(
                         controller: _minimum,
                         label: 'Minimum stock alert level',
                         keyboard: TextInputType.number,
                         validator: _quantityValidator,
                       ),
-
+                      if (_editing) ...[
+                        Text(
+                          'Use Add Stock on the inventory page to receive '
+                          'stock. Existing part usage records keep their '
+                          'original names and prices.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            height: 1.5,
+                            color: colors.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                      ],
                       FilledButton.icon(
                         onPressed: _saving ? null : _save,
-                        icon: const Icon(Icons.save_outlined),
-                        label: Text(_saving ? 'Saving...' : 'Save Part'),
+                        icon: _saving
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.save_outlined),
+                        label: Text(
+                          _saving
+                              ? 'Saving...'
+                              : _editing
+                              ? 'Save Changes'
+                              : 'Save Part',
+                        ),
                       ),
                     ],
                   ),
@@ -592,9 +747,7 @@ class _RestockDialogState extends State<_RestockDialog> {
   String? _error;
 
   Future<void> _save() async {
-    if (_saving || !_formKey.currentState!.validate()) {
-      return;
-    }
+    if (_saving || !_formKey.currentState!.validate()) return;
 
     final quantity = int.parse(_quantity.text.trim());
 
@@ -610,17 +763,16 @@ class _RestockDialogState extends State<_RestockDialog> {
         transaction,
       ) async {
         final snapshot = await transaction.get(widget.reference);
-
         final data = snapshot.data();
 
         if (data == null) {
-          throw StateError('Part not found.');
+          throw const _InventoryException('Part not found.');
         }
 
         final nextStock = (data['stock'] as int) + quantity;
 
         if (nextStock > 1000000) {
-          throw StateError('Maximum stock is 1000000 units.');
+          throw const _InventoryException('Maximum stock is 1000000 units.');
         }
 
         transaction.update(widget.reference, {
@@ -630,12 +782,9 @@ class _RestockDialogState extends State<_RestockDialog> {
       });
 
       if (!mounted) return;
-
       Navigator.of(context).pop();
-    } on StateError catch (error) {
-      if (mounted) {
-        setState(() => _error = '${error.message}');
-      }
+    } on _InventoryException catch (error) {
+      if (mounted) setState(() => _error = error.message);
     } on FirebaseException catch (error) {
       if (!mounted) return;
 
@@ -649,9 +798,7 @@ class _RestockDialogState extends State<_RestockDialog> {
         setState(() => _error = 'Unable to add stock.');
       }
     } finally {
-      if (mounted) {
-        setState(() => _saving = false);
-      }
+      if (mounted) setState(() => _saving = false);
     }
   }
 
@@ -675,9 +822,7 @@ class _RestockDialogState extends State<_RestockDialog> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(widget.name),
-
                 const SizedBox(height: 18),
-
                 TextFormField(
                   controller: _quantity,
                   enabled: !_saving,
@@ -686,14 +831,17 @@ class _RestockDialogState extends State<_RestockDialog> {
                     labelText: 'Quantity received',
                   ),
                   validator: (value) {
-                    final quantity = int.tryParse(value?.trim() ?? '');
+                    final text = value?.trim() ?? '';
+                    final quantity = int.tryParse(text);
 
-                    return quantity == null || quantity < 1 || quantity > 100000
+                    return !RegExp(r'^\d+$').hasMatch(text) ||
+                            quantity == null ||
+                            quantity < 1 ||
+                            quantity > 100000
                         ? 'Enter a whole number from 1 to 100000.'
                         : null;
                   },
                 ),
-
                 if (_error != null) ...[
                   const SizedBox(height: 12),
                   Text(
@@ -720,4 +868,10 @@ class _RestockDialogState extends State<_RestockDialog> {
       ),
     );
   }
+}
+
+class _InventoryException implements Exception {
+  final String message;
+
+  const _InventoryException(this.message);
 }

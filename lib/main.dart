@@ -6,43 +6,11 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import 'firebase_options.dart';
+import 'app_theme.dart';
+import 'animated_dashboard.dart';
 import 'customers_screen.dart';
 import 'vehicles_screen.dart';
 import 'inventory_screen.dart';
-import 'animated_dashboard.dart';
-
-// App colours
-class AppColors {
-  static const gold = Color(0xFFF7B22C);
-  static const coffee = Color(0xFF3C312B);
-  static const olive = Color(0xFF403E2D);
-  static const beige = Color(0xFFD7C3A5);
-
-  static const background = olive;
-  static const surface = coffee;
-  static const field = Color(0xFF494237);
-  static const border = Color(0xFF81735E);
-  static const text = Color(0xFFFFEED7);
-  static const muted = beige;
-}
-
-class RoadColors {
-  static const background = AppColors.background;
-  static const surface = AppColors.surface;
-  static const field = AppColors.field;
-  static const border = AppColors.border;
-  static const brown = AppColors.gold;
-  static const text = AppColors.text;
-  static const muted = AppColors.muted;
-}
-
-const appSystemStyle = SystemUiOverlayStyle(
-  statusBarColor: Colors.transparent,
-  statusBarIconBrightness: Brightness.light,
-  statusBarBrightness: Brightness.dark,
-  systemNavigationBarColor: AppColors.coffee,
-  systemNavigationBarIconBrightness: Brightness.light,
-);
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -57,162 +25,22 @@ class AutoCareApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme =
-        ColorScheme.fromSeed(
-          seedColor: AppColors.gold,
-          brightness: Brightness.dark,
-        ).copyWith(
-          primary: AppColors.gold,
-          onPrimary: AppColors.coffee,
-          secondary: AppColors.beige,
-          onSecondary: AppColors.coffee,
-          surface: AppColors.surface,
-          onSurface: AppColors.text,
-          outline: AppColors.border,
-          error: const Color(0xFFFFB4A9),
-          onError: AppColors.coffee,
-        );
-
-    OutlineInputBorder fieldBorder(Color color, [double width = 1]) {
-      return OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: BorderSide(color: color, width: width),
-      );
-    }
-
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'AutoCare',
-      theme: ThemeData(
-        useMaterial3: true,
-        brightness: Brightness.dark,
-        colorScheme: scheme,
-        scaffoldBackgroundColor: AppColors.background,
-        dividerColor: AppColors.border,
-
-        appBarTheme: const AppBarTheme(
-          backgroundColor: AppColors.background,
-          foregroundColor: AppColors.text,
-          surfaceTintColor: Colors.transparent,
-          elevation: 0,
-          scrolledUnderElevation: 0,
-          systemOverlayStyle: appSystemStyle,
-          titleTextStyle: TextStyle(
-            color: AppColors.text,
-            fontSize: 22,
-            fontWeight: FontWeight.w800,
-            letterSpacing: -0.5,
-          ),
-        ),
-
-        cardTheme: CardThemeData(
-          color: AppColors.surface,
-          surfaceTintColor: Colors.transparent,
-          elevation: 0,
-          margin: EdgeInsets.zero,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(22),
-            side: const BorderSide(color: AppColors.border, width: 0.7),
-          ),
-        ),
-
-        inputDecorationTheme: InputDecorationTheme(
-          filled: true,
-          fillColor: AppColors.field,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 18,
-            vertical: 19,
-          ),
-          labelStyle: const TextStyle(color: AppColors.beige),
-          hintStyle: const TextStyle(color: AppColors.beige),
-          prefixIconColor: AppColors.beige,
-          suffixIconColor: AppColors.beige,
-          border: fieldBorder(AppColors.border),
-          enabledBorder: fieldBorder(AppColors.border),
-          focusedBorder: fieldBorder(AppColors.gold, 1.8),
-          errorBorder: fieldBorder(scheme.error),
-          focusedErrorBorder: fieldBorder(scheme.error, 1.8),
-        ),
-
-        filledButtonTheme: FilledButtonThemeData(
-          style: FilledButton.styleFrom(
-            backgroundColor: AppColors.gold,
-            foregroundColor: AppColors.coffee,
-            minimumSize: const Size(0, 54),
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-            textStyle: const TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w800,
-            ),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-          ),
-        ),
-
-        outlinedButtonTheme: OutlinedButtonThemeData(
-          style: OutlinedButton.styleFrom(
-            foregroundColor: AppColors.text,
-            side: const BorderSide(color: AppColors.border),
-            minimumSize: const Size(0, 48),
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-          ),
-        ),
-
-        textButtonTheme: TextButtonThemeData(
-          style: TextButton.styleFrom(foregroundColor: AppColors.gold),
-        ),
-
-        floatingActionButtonTheme: const FloatingActionButtonThemeData(
-          backgroundColor: AppColors.gold,
-          foregroundColor: AppColors.coffee,
-          elevation: 2,
-        ),
-
-        progressIndicatorTheme: const ProgressIndicatorThemeData(
-          color: AppColors.gold,
-        ),
-
-        textSelectionTheme: const TextSelectionThemeData(
-          cursorColor: AppColors.gold,
-          selectionColor: Color(0x55F7B22C),
-          selectionHandleColor: AppColors.gold,
-        ),
-
-        snackBarTheme: const SnackBarThemeData(
-          backgroundColor: AppColors.coffee,
-          contentTextStyle: TextStyle(color: AppColors.text),
-          behavior: SnackBarBehavior.floating,
-        ),
-
-        chipTheme: ChipThemeData(
-          backgroundColor: AppColors.surface,
-          selectedColor: AppColors.field,
-          checkmarkColor: AppColors.gold,
-          labelStyle: const TextStyle(color: AppColors.text),
-          side: const BorderSide(color: AppColors.border),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-        ),
-      ),
-
+      theme: AutoCareTheme.theme,
       builder: (context, child) {
         return AnnotatedRegion<SystemUiOverlayStyle>(
           value: appSystemStyle,
           child: child ?? const SizedBox.shrink(),
         );
       },
-
       home: const AuthGate(),
     );
   }
 }
 
-// Screen entrance animation
+// Fade and slide entrance.
 class Entrance extends StatefulWidget {
   final Widget child;
 
@@ -235,7 +63,7 @@ class _EntranceState extends State<Entrance>
 
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 650),
+      duration: const Duration(milliseconds: 600),
     );
 
     _animation = _controller.drive(CurveTween(curve: Curves.easeOutCubic));
@@ -266,7 +94,7 @@ class _EntranceState extends State<Entrance>
       opacity: _animation,
       child: SlideTransition(
         position: Tween<Offset>(
-          begin: const Offset(0, 0.05),
+          begin: const Offset(0, 0.04),
           end: Offset.zero,
         ).animate(_animation),
         child: widget.child,
@@ -275,7 +103,7 @@ class _EntranceState extends State<Entrance>
   }
 }
 
-// Button press animation
+// Button press feedback.
 class PressScale extends StatefulWidget {
   final Widget child;
   final bool enabled;
@@ -291,6 +119,7 @@ class _PressScaleState extends State<PressScale> {
 
   void _setPressed(bool value) {
     if (_pressed == value) return;
+
     setState(() => _pressed = value);
   }
 
@@ -307,14 +136,13 @@ class _PressScaleState extends State<PressScale> {
         duration: reduceMotion
             ? Duration.zero
             : const Duration(milliseconds: 130),
-        curve: Curves.easeOut,
         child: widget.child,
       ),
     );
   }
 }
 
-// Animated Login logo
+// Login brand.
 class AutoCareBrand extends StatefulWidget {
   const AutoCareBrand({super.key});
 
@@ -332,7 +160,7 @@ class _AutoCareBrandState extends State<AutoCareBrand>
 
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 4),
+      duration: const Duration(seconds: 5),
     );
   }
 
@@ -361,30 +189,26 @@ class _AutoCareBrandState extends State<AutoCareBrand>
         AnimatedBuilder(
           animation: _controller,
           child: Container(
-            width: 86,
-            height: 86,
+            width: 88,
+            height: 88,
             decoration: BoxDecoration(
-              color: AppColors.coffee,
+              color: AppColors.surface,
               borderRadius: BorderRadius.circular(26),
-              border: Border.all(color: AppColors.border, width: 0.8),
+              border: Border.all(color: AppColors.border, width: 0.7),
             ),
-            child: const Icon(
-              Icons.car_repair_rounded,
-              color: AppColors.gold,
-              size: 50,
+            child: const Center(
+              child: AutoCareLineIcon(type: AutoCareIconType.service, size: 60),
             ),
           ),
           builder: (context, child) {
-            final wave = math.sin(_controller.value * 2 * math.pi);
-
             return Transform.translate(
-              offset: Offset(0, wave * 4),
+              offset: Offset(0, math.sin(_controller.value * 2 * math.pi) * 3),
               child: child,
             );
           },
         ),
 
-        const SizedBox(height: 18),
+        const SizedBox(height: 20),
 
         const Text.rich(
           TextSpan(
@@ -395,14 +219,14 @@ class _AutoCareBrandState extends State<AutoCareBrand>
               ),
               TextSpan(
                 text: 'Care',
-                style: TextStyle(color: AppColors.gold),
+                style: TextStyle(color: AppColors.accent),
               ),
             ],
           ),
           style: TextStyle(
-            fontSize: 37,
-            fontWeight: FontWeight.w900,
-            letterSpacing: -1.3,
+            fontSize: 36,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -1.2,
           ),
         ),
 
@@ -412,30 +236,10 @@ class _AutoCareBrandState extends State<AutoCareBrand>
           'GOOD SERVICE. EVERY MILE.',
           textAlign: TextAlign.center,
           style: TextStyle(
-            color: AppColors.beige,
+            color: AppColors.muted,
             fontSize: 10,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 2,
-          ),
-        ),
-
-        const SizedBox(height: 22),
-
-        ExcludeSemantics(
-          child: SizedBox(
-            width: 160,
-            height: 5,
-            child: ClipRect(
-              child: AnimatedBuilder(
-                animation: _controller,
-                builder: (context, child) {
-                  return CustomPaint(
-                    painter: _RoadPainter(_controller.value),
-                    size: const Size(160, 5),
-                  );
-                },
-              ),
-            ),
+            fontWeight: FontWeight.w600,
+            letterSpacing: 1.8,
           ),
         ),
       ],
@@ -443,39 +247,7 @@ class _AutoCareBrandState extends State<AutoCareBrand>
   }
 }
 
-class _RoadPainter extends CustomPainter {
-  final double progress;
-
-  _RoadPainter(this.progress);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = AppColors.gold;
-
-    const spacing = 28.0;
-
-    for (
-      double x = -spacing + progress * spacing;
-      x < size.width;
-      x += spacing
-    ) {
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(x, 1, 18, 3),
-          const Radius.circular(2),
-        ),
-        paint,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _RoadPainter oldDelegate) {
-    return oldDelegate.progress != progress;
-  }
-}
-
-// Firebase authentication state
+// Firebase account state.
 class AuthGate extends StatefulWidget {
   const AuthGate({super.key});
 
@@ -524,7 +296,7 @@ class _AuthGateState extends State<AuthGate> {
   }
 }
 
-// Login / Sign Up
+// Login and Sign Up.
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
 
@@ -582,7 +354,6 @@ class _AuthScreenState extends State<AuthScreen> {
     }
 
     FocusScope.of(context).unfocus();
-
     setState(() => _loading = true);
 
     try {
@@ -612,8 +383,9 @@ class _AuthScreenState extends State<AuthScreen> {
     }
   }
 
-  void _message(String text) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+  void _message(String message) {
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _toggleMode() {
@@ -632,7 +404,6 @@ class _AuthScreenState extends State<AuthScreen> {
     _email.dispose();
     _password.dispose();
     _confirm.dispose();
-
     super.dispose();
   }
 
@@ -668,9 +439,10 @@ class _AuthScreenState extends State<AuthScreen> {
                             Text(
                               _isLogin ? 'Welcome back.' : 'Let’s get started.',
                               style: const TextStyle(
-                                fontSize: 29,
+                                color: AppColors.text,
+                                fontSize: 28,
                                 fontWeight: FontWeight.w800,
-                                letterSpacing: -0.8,
+                                letterSpacing: -0.7,
                               ),
                             ),
                             const SizedBox(height: 8),
@@ -679,7 +451,7 @@ class _AuthScreenState extends State<AuthScreen> {
                                   ? 'Your workshop, organised.'
                                   : 'Create your AutoCare account.',
                               style: const TextStyle(
-                                color: AppColors.beige,
+                                color: AppColors.muted,
                                 height: 1.6,
                               ),
                             ),
@@ -725,7 +497,9 @@ class _AuthScreenState extends State<AuthScreen> {
                                 ? TextInputAction.done
                                 : TextInputAction.next,
                             onFieldSubmitted: (_) {
-                              if (_isLogin) _submit();
+                              if (_isLogin) {
+                                _submit();
+                              }
                             },
                             decoration: InputDecoration(
                               labelText: 'Password',
@@ -775,7 +549,9 @@ class _AuthScreenState extends State<AuthScreen> {
                                       enabled: !_loading,
                                       obscureText: _hidePassword,
                                       textInputAction: TextInputAction.done,
-                                      onFieldSubmitted: (_) => _submit(),
+                                      onFieldSubmitted: (_) {
+                                        _submit();
+                                      },
                                       decoration: const InputDecoration(
                                         labelText: 'Confirm password',
                                         prefixIcon: Icon(Icons.lock_outline),
@@ -801,7 +577,7 @@ class _AuthScreenState extends State<AuthScreen> {
                                       width: 22,
                                       child: CircularProgressIndicator(
                                         strokeWidth: 2,
-                                        color: AppColors.coffee,
+                                        color: AppColors.navigation,
                                       ),
                                     )
                                   : Row(
@@ -848,7 +624,7 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 }
 
-// Bottom navigation and page transitions
+// Main navigation.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -872,13 +648,12 @@ class _HomeScreenState extends State<HomeScreen>
 
     _tabController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 280),
+      duration: const Duration(milliseconds: 250),
       value: 1,
     );
 
     _tabOpacity = _tabController.drive(CurveTween(curve: Curves.easeOut));
 
-    // Connect the new animated dashboard.
     _pages[0] = AnimatedDashboard(onSelectTab: _selectTab, onOpen: _open);
   }
 
@@ -912,6 +687,36 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
+  void _open(Widget screen) {
+    final reduceMotion = MediaQuery.of(context).disableAnimations;
+
+    Navigator.of(context).push(
+      PageRouteBuilder<void>(
+        pageBuilder: (_, animation, secondaryAnimation) => screen,
+        transitionDuration: reduceMotion
+            ? Duration.zero
+            : const Duration(milliseconds: 320),
+        reverseTransitionDuration: reduceMotion
+            ? Duration.zero
+            : const Duration(milliseconds: 230),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          final curve = animation.drive(CurveTween(curve: Curves.easeOutCubic));
+
+          return FadeTransition(
+            opacity: curve,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0.05, 0),
+                end: Offset.zero,
+              ).animate(curve),
+              child: child,
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Future<void> _logout() async {
     if (_loggingOut) return;
 
@@ -932,40 +737,25 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
-  void _open(Widget screen) {
-    final reduceMotion = MediaQuery.of(context).disableAnimations;
-
-    Navigator.of(context).push(
-      PageRouteBuilder<void>(
-        pageBuilder: (context, animation, secondaryAnimation) => screen,
-        transitionDuration: reduceMotion
-            ? Duration.zero
-            : const Duration(milliseconds: 350),
-        reverseTransitionDuration: reduceMotion
-            ? Duration.zero
-            : const Duration(milliseconds: 250),
-        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          final curve = animation.drive(CurveTween(curve: Curves.easeOutCubic));
-
-          return FadeTransition(
-            opacity: curve,
-            child: SlideTransition(
-              position: Tween<Offset>(
-                begin: const Offset(0.06, 0),
-                end: Offset.zero,
-              ).animate(curve),
-              child: child,
-            ),
-          );
-        },
-      ),
-    );
-  }
-
   @override
   void dispose() {
     _tabController.dispose();
     super.dispose();
+  }
+
+  NavigationDestination _destination({
+    required String label,
+    required AutoCareIconType type,
+  }) {
+    return NavigationDestination(
+      label: label,
+      icon: AutoCareLineIcon(type: type, size: 25, color: AppColors.muted),
+      selectedIcon: AutoCareLineIcon(
+        type: type,
+        size: 25,
+        color: AppColors.accent,
+      ),
+    );
   }
 
   @override
@@ -989,67 +779,24 @@ class _HomeScreenState extends State<HomeScreen>
 
       bottomNavigationBar: Container(
         decoration: const BoxDecoration(
-          border: Border(top: BorderSide(color: AppColors.border, width: 0.7)),
+          border: Border(top: BorderSide(color: AppColors.border, width: 0.6)),
         ),
-        child: NavigationBarTheme(
-          data: NavigationBarThemeData(
-            backgroundColor: AppColors.coffee,
-            surfaceTintColor: Colors.transparent,
-            indicatorColor: AppColors.gold,
-            labelTextStyle: WidgetStateProperty.resolveWith<TextStyle>((
-              states,
-            ) {
-              final selected = states.contains(WidgetState.selected);
-
-              return TextStyle(
-                color: selected ? AppColors.gold : AppColors.beige,
-                fontSize: 10,
-                fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
-              );
-            }),
-          ),
-          child: NavigationBar(
-            selectedIndex: _selected,
-            onDestinationSelected: _selectTab,
-            height: 70,
-            animationDuration: reduceMotion
-                ? Duration.zero
-                : const Duration(milliseconds: 350),
-            labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-            destinations: [
-              _destination(
-                'Home',
-                Icons.grid_view_outlined,
-                Icons.grid_view_rounded,
-              ),
-              _destination('Customers', Icons.people_outline, Icons.people),
-              _destination(
-                'Vehicles',
-                Icons.directions_car_outlined,
-                Icons.directions_car,
-              ),
-              _destination(
-                'Parts',
-                Icons.inventory_2_outlined,
-                Icons.inventory_2,
-              ),
-              _destination('Account', Icons.person_outline, Icons.person),
-            ],
-          ),
+        child: NavigationBar(
+          selectedIndex: _selected,
+          onDestinationSelected: _selectTab,
+          animationDuration: reduceMotion
+              ? Duration.zero
+              : const Duration(milliseconds: 300),
+          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+          destinations: [
+            _destination(label: 'Home', type: AutoCareIconType.home),
+            _destination(label: 'Customers', type: AutoCareIconType.people),
+            _destination(label: 'Vehicles', type: AutoCareIconType.car),
+            _destination(label: 'Parts', type: AutoCareIconType.box),
+            _destination(label: 'Account', type: AutoCareIconType.person),
+          ],
         ),
       ),
-    );
-  }
-
-  NavigationDestination _destination(
-    String label,
-    IconData icon,
-    IconData selectedIcon,
-  ) {
-    return NavigationDestination(
-      label: label,
-      icon: Icon(icon, color: AppColors.beige),
-      selectedIcon: Icon(selectedIcon, color: AppColors.coffee),
     );
   }
 
@@ -1070,11 +817,10 @@ class _HomeScreenState extends State<HomeScreen>
                 children: [
                   const CircleAvatar(
                     radius: 42,
-                    backgroundColor: AppColors.coffee,
-                    child: Icon(
-                      Icons.person_outline,
-                      color: AppColors.gold,
-                      size: 44,
+                    backgroundColor: AppColors.accentSoft,
+                    child: AutoCareLineIcon(
+                      type: AutoCareIconType.person,
+                      size: 48,
                     ),
                   ),
 
@@ -1083,7 +829,11 @@ class _HomeScreenState extends State<HomeScreen>
                   const Text(
                     'Your AutoCare account',
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 25, fontWeight: FontWeight.w800),
+                    style: TextStyle(
+                      color: AppColors.text,
+                      fontSize: 25,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
 
                   const SizedBox(height: 12),
@@ -1091,7 +841,7 @@ class _HomeScreenState extends State<HomeScreen>
                   Text(
                     user?.email ?? '',
                     textAlign: TextAlign.center,
-                    style: const TextStyle(color: AppColors.beige),
+                    style: const TextStyle(color: AppColors.muted),
                   ),
 
                   const SizedBox(height: 32),
