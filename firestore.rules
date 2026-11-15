@@ -1,0 +1,590 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function owner() {
+      return request.auth != null
+        && request.auth.uid == 'V5MswTMi5ed6rMtPvXxMTA3Kf3A3';
+    }
+
+    // =====================================================
+    // BOOKING AVAILABILITY
+    // One bay, one-hour slots, 09:00–17:00 Sri Lanka time.
+    // =====================================================
+
+    function slotId(start) {
+      return 'slot_' + string(start.toMillis());
+    }
+
+    function hourlyStart(start) {
+      let local = start + duration.value(330, 'm');
+
+      return start is timestamp
+        && local.hours() >= 9
+        && local.hours() < 17
+        && local.minutes() == 0
+        && local.seconds() == 0
+        && start.nanos() == 0;
+    }
+
+    function confirmedWithSlot(id, start) {
+      let path =
+        /databases/$(database)/documents/bookingSlots/$(slotId(start));
+
+      return !exists(path)
+        && getAfter(path).data.bookingId == id
+        && getAfter(path).data.startAt == start;
+    }
+
+    function reservationReleased(id, start) {
+      let path =
+        /databases/$(database)/documents/bookingSlots/$(slotId(start));
+
+      return !exists(path)
+        || get(path).data.bookingId != id
+        || !existsAfter(path);
+    }
+
+    function validSlot(data, id) {
+      let before = get(
+        /databases/$(database)/documents/bookings/$(data.bookingId)
+      ).data;
+
+      let after = getAfter(
+        /databases/$(database)/documents/bookings/$(data.bookingId)
+      ).data;
+
+      return data.keys().hasAll([
+          'bookingId', 'startAt', 'endAt', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'bookingId', 'startAt', 'endAt', 'createdAt'
+        ])
+        && data.bookingId is string
+        && data.startAt is timestamp
+        && hourlyStart(data.startAt)
+        && id == slotId(data.startAt)
+        && data.startAt > request.time
+        && data.endAt
+          == data.startAt + duration.value(1, 'h')
+        && data.createdAt == request.time
+        && before.status == 'pending'
+        && after.status == 'confirmed'
+        && before.scheduledAt == data.startAt
+        && after.scheduledAt == data.startAt;
+    }
+
+    function cancelSlot(data) {
+      let before = get(
+        /databases/$(database)/documents/bookings/$(data.bookingId)
+      ).data;
+
+      let after = getAfter(
+        /databases/$(database)/documents/bookings/$(data.bookingId)
+      ).data;
+
+      return before.status == 'confirmed'
+        && after.status == 'cancelled'
+        && before.scheduledAt == data.startAt
+        && !existsAfter(
+          /databases/$(database)/documents/jobCards/$(data.bookingId)
+        );
+    }
+
+    match /bookingSlots/{id} {
+      allow read: if owner();
+
+      allow create: if owner()
+        && validSlot(request.resource.data, id);
+
+      allow delete: if owner()
+        && cancelSlot(resource.data);
+    }
+
+    // =====================================================
+    // CUSTOMERS
+    // =====================================================
+
+    function customerValid(data) {
+      return data.keys().hasAll([
+          'name', 'phone', 'email', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'name', 'phone', 'email', 'createdAt'
+        ])
+        && data.name is string
+        && data.name.size() > 0
+        && data.name.size() <= 100
+        && data.phone is string
+        && data.phone.size() > 0
+        && data.phone.size() <= 30
+        && data.email is string
+        && data.email.size() <= 254
+        && data.createdAt is timestamp;
+    }
+
+    match /customers/{id} {
+      allow read: if owner();
+
+      allow create: if owner()
+        && customerValid(request.resource.data)
+        && request.resource.data.createdAt == request.time;
+
+      allow update: if owner()
+        && customerValid(request.resource.data)
+        && request.resource.data.createdAt
+          == resource.data.createdAt;
+    }
+
+    // =====================================================
+    // VEHICLES & SERVICE REMINDERS
+    // =====================================================
+
+    match /vehicles/{id} {
+      allow read: if owner();
+
+      allow create: if owner()
+        && request.resource.data.keys().hasAll([
+          'customerId', 'registration',
+          'brand', 'model', 'createdAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'customerId', 'registration',
+          'brand', 'model', 'createdAt'
+        ])
+        && request.resource.data.customerId is string
+        && exists(
+          /databases/$(database)/documents/customers/$(request.resource.data.customerId)
+        )
+        && request.resource.data.registration is string
+        && request.resource.data.registration.size() > 0
+        && request.resource.data.registration.size() <= 30
+        && request.resource.data.brand is string
+        && request.resource.data.brand.size() > 0
+        && request.resource.data.brand.size() <= 60
+        && request.resource.data.model is string
+        && request.resource.data.model.size() > 0
+        && request.resource.data.model.size() <= 60
+        && request.resource.data.createdAt == request.time;
+
+      allow update: if owner()
+        && request.resource.data.diff(resource.data)
+          .affectedKeys().hasOnly([
+            'nextServiceDate', 'reminderUpdatedAt'
+          ])
+        && request.resource.data.keys().hasOnly([
+          'customerId', 'registration',
+          'brand', 'model', 'createdAt',
+          'nextServiceDate', 'reminderUpdatedAt'
+        ])
+        && request.resource.data.reminderUpdatedAt == request.time
+        && (
+          !('nextServiceDate' in request.resource.data)
+          || request.resource.data.nextServiceDate is timestamp
+        );
+    }
+
+    // =====================================================
+    // BOOKINGS
+    // =====================================================
+
+    match /bookings/{id} {
+      allow read: if owner();
+
+      allow create: if owner()
+        && request.resource.data.keys().hasAll([
+          'vehicleId', 'serviceType', 'scheduledAt',
+          'notes', 'status', 'createdAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'vehicleId', 'serviceType', 'scheduledAt',
+          'notes', 'status', 'createdAt'
+        ])
+        && request.resource.data.vehicleId is string
+        && exists(
+          /databases/$(database)/documents/vehicles/$(request.resource.data.vehicleId)
+        )
+        && request.resource.data.serviceType in [
+          'Full Service',
+          'Oil Change',
+          'Vehicle Inspection',
+          'Brake Service',
+          'Other Repair'
+        ]
+        && request.resource.data.scheduledAt is timestamp
+        && hourlyStart(request.resource.data.scheduledAt)
+        && request.resource.data.scheduledAt > request.time
+        && request.resource.data.notes is string
+        && request.resource.data.notes.size() <= 500
+        && request.resource.data.status == 'pending'
+        && request.resource.data.createdAt == request.time;
+
+      allow update: if owner()
+        && request.resource.data.diff(resource.data)
+          .affectedKeys().hasOnly([
+            'status', 'updatedAt'
+          ])
+        && request.resource.data.updatedAt == request.time
+        && (
+          (
+            resource.data.status == 'pending'
+            && request.resource.data.status == 'confirmed'
+            && resource.data.scheduledAt > request.time
+            && hourlyStart(resource.data.scheduledAt)
+            && confirmedWithSlot(
+              id,
+              resource.data.scheduledAt
+            )
+          )
+          ||
+          (
+            resource.data.status in [
+              'pending', 'confirmed'
+            ]
+            && request.resource.data.status == 'cancelled'
+            && !existsAfter(
+              /databases/$(database)/documents/jobCards/$(id)
+            )
+            && reservationReleased(
+              id,
+              resource.data.scheduledAt
+            )
+          )
+        );
+    }
+
+    // =====================================================
+    // JOB CARDS
+    // =====================================================
+
+    function freshUsage(id) {
+      return id is string
+        && !exists(
+          /databases/$(database)/documents/partUsage/$(id)
+        );
+    }
+
+    function usageAfter(id) {
+      return getAfter(
+        /databases/$(database)/documents/partUsage/$(id)
+      ).data;
+    }
+
+    function jobCreate(data, id) {
+      let booking = getAfter(
+        /databases/$(database)/documents/bookings/$(id)
+      ).data;
+
+      return data.keys().hasAll([
+          'bookingId', 'vehicleId', 'serviceType',
+          'notes', 'labourCents', 'status',
+          'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'bookingId', 'vehicleId', 'serviceType',
+          'notes', 'labourCents', 'status',
+          'createdAt', 'updatedAt'
+        ])
+        && data.bookingId == id
+        && booking.status == 'confirmed'
+        && data.vehicleId == booking.vehicleId
+        && data.serviceType == booking.serviceType
+        && data.notes is string
+        && data.notes.size() <= 2000
+        && data.labourCents is int
+        && data.labourCents == 0
+        && data.status == 'open'
+        && data.createdAt == request.time
+        && data.updatedAt == request.time;
+    }
+
+    function jobEdit(before, after) {
+      return after.diff(before).affectedKeys().hasOnly([
+          'notes', 'labourCents', 'status', 'updatedAt'
+        ])
+        && after.notes is string
+        && after.notes.size() <= 2000
+        && after.labourCents is int
+        && after.labourCents >= 0
+        && after.labourCents <= 100000000
+        && after.updatedAt == request.time
+        && (
+          (
+            before.status == 'open'
+            && after.status in [
+              'open', 'in_progress'
+            ]
+          )
+          ||
+          (
+            before.status == 'in_progress'
+            && after.status in [
+              'in_progress', 'completed'
+            ]
+          )
+        );
+    }
+
+    function jobParts(before, after, id) {
+      let usage = usageAfter(after.lastUsageId);
+
+      return before.status in [
+          'open', 'in_progress'
+        ]
+        && after.diff(before).affectedKeys().hasOnly([
+          'partsTotalCents', 'lastUsageId', 'updatedAt'
+        ])
+        && freshUsage(after.lastUsageId)
+        && usage.jobId == id
+        && after.partsTotalCents is int
+        && after.partsTotalCents
+          == before.get('partsTotalCents', 0)
+            + usage.totalCents
+        && after.partsTotalCents <= 10000000000
+        && after.updatedAt == request.time;
+    }
+
+    match /jobCards/{id} {
+      allow read: if owner();
+
+      allow create: if owner()
+        && jobCreate(request.resource.data, id);
+
+      allow update: if owner()
+        && (
+          jobEdit(resource.data, request.resource.data)
+          ||
+          jobParts(resource.data, request.resource.data, id)
+        );
+    }
+
+    // =====================================================
+    // SPARE PARTS
+    // =====================================================
+
+    function validPart(data) {
+      return data.keys().hasAll([
+          'name', 'unitPriceCents', 'stock',
+          'minStock', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'name', 'unitPriceCents', 'stock',
+          'minStock', 'createdAt', 'updatedAt'
+        ])
+        && data.name is string
+        && data.name.size() > 0
+        && data.name.size() <= 100
+        && data.unitPriceCents is int
+        && data.unitPriceCents >= 0
+        && data.unitPriceCents <= 100000000
+        && data.stock is int
+        && data.stock >= 0
+        && data.stock <= 1000000
+        && data.minStock is int
+        && data.minStock >= 0
+        && data.minStock <= 1000000
+        && data.createdAt == request.time
+        && data.updatedAt == request.time;
+    }
+
+    // Edit descriptive details without changing stock,
+    // creation time or previous usage references.
+    function partEdit(before, after) {
+      return after.diff(before).affectedKeys().hasOnly([
+          'name', 'unitPriceCents', 'minStock', 'updatedAt'
+        ])
+        && after.name is string
+        && after.name.size() > 0
+        && after.name.size() <= 100
+        && after.unitPriceCents is int
+        && after.unitPriceCents >= 0
+        && after.unitPriceCents <= 100000000
+        && after.minStock is int
+        && after.minStock >= 0
+        && after.minStock <= 1000000
+        && after.updatedAt == request.time;
+    }
+
+    function restock(before, after) {
+      return after.diff(before).affectedKeys().hasOnly([
+          'stock', 'updatedAt'
+        ])
+        && after.stock is int
+        && after.stock > before.stock
+        && after.stock <= 1000000
+        && after.stock - before.stock <= 100000
+        && after.updatedAt == request.time;
+    }
+
+    function consume(before, after, id) {
+      let usage = usageAfter(after.lastUsageId);
+
+      return after.diff(before).affectedKeys().hasOnly([
+          'stock', 'lastUsageId', 'updatedAt'
+        ])
+        && freshUsage(after.lastUsageId)
+        && usage.partId == id
+        && after.stock is int
+        && after.stock >= 0
+        && after.stock == before.stock - usage.quantity
+        && after.updatedAt == request.time;
+    }
+
+    match /spareParts/{id} {
+      allow read: if owner();
+
+      allow create: if owner()
+        && id.matches('^[A-Z0-9_-]{1,30}$')
+        && validPart(request.resource.data);
+
+      allow update: if owner()
+        && (
+          partEdit(resource.data, request.resource.data)
+          ||
+          restock(resource.data, request.resource.data)
+          ||
+          consume(resource.data, request.resource.data, id)
+        );
+    }
+
+    // =====================================================
+    // PART USAGE
+    // =====================================================
+
+    function validUsage(data, id) {
+      let partBefore = get(
+        /databases/$(database)/documents/spareParts/$(data.partId)
+      ).data;
+
+      let partAfter = getAfter(
+        /databases/$(database)/documents/spareParts/$(data.partId)
+      ).data;
+
+      let jobBefore = get(
+        /databases/$(database)/documents/jobCards/$(data.jobId)
+      ).data;
+
+      let jobAfter = getAfter(
+        /databases/$(database)/documents/jobCards/$(data.jobId)
+      ).data;
+
+      return data.keys().hasAll([
+          'jobId', 'partId', 'partName', 'quantity',
+          'unitPriceCents', 'totalCents', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'jobId', 'partId', 'partName', 'quantity',
+          'unitPriceCents', 'totalCents', 'createdAt'
+        ])
+        && data.jobId is string
+        && data.partId is string
+        && data.partName == partBefore.name
+        && data.quantity is int
+        && data.quantity > 0
+        && data.quantity <= 10000
+        && data.unitPriceCents == partBefore.unitPriceCents
+        && data.totalCents
+          == data.quantity * partBefore.unitPriceCents
+        && data.totalCents <= 10000000000
+        && data.createdAt == request.time
+        && jobBefore.status in [
+          'open', 'in_progress'
+        ]
+        && jobAfter.status == jobBefore.status
+        && partAfter.stock
+          == partBefore.stock - data.quantity
+        && partAfter.stock >= 0
+        && partAfter.lastUsageId == id
+        && jobAfter.partsTotalCents
+          == jobBefore.get('partsTotalCents', 0)
+            + data.totalCents
+        && jobAfter.lastUsageId == id;
+    }
+
+    match /partUsage/{id} {
+      allow read: if owner();
+
+      allow create: if owner()
+        && validUsage(request.resource.data, id);
+    }
+
+    // =====================================================
+    // INVOICES
+    // =====================================================
+
+    function validInvoice(data, id) {
+      let job = get(
+        /databases/$(database)/documents/jobCards/$(id)
+      ).data;
+
+      let vehicle = get(
+        /databases/$(database)/documents/vehicles/$(job.vehicleId)
+      ).data;
+
+      let customer = get(
+        /databases/$(database)/documents/customers/$(vehicle.customerId)
+      ).data;
+
+      return data.keys().hasAll([
+          'jobId', 'vehicleId', 'registration',
+          'customerId', 'customerName', 'customerPhone',
+          'labourCents', 'partsCents',
+          'grandTotalCents', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'jobId', 'vehicleId', 'registration',
+          'customerId', 'customerName', 'customerPhone',
+          'labourCents', 'partsCents',
+          'grandTotalCents', 'createdAt'
+        ])
+        && data.jobId == id
+        && job.status == 'completed'
+        && data.vehicleId == job.vehicleId
+        && data.registration == vehicle.registration
+        && data.customerId == vehicle.customerId
+        && data.customerName == customer.name
+        && data.customerPhone == customer.phone
+        && data.labourCents == job.labourCents
+        && data.partsCents == job.get('partsTotalCents', 0)
+        && data.grandTotalCents
+          == job.labourCents + job.get('partsTotalCents', 0)
+        && data.createdAt == request.time;
+    }
+
+    match /invoices/{id} {
+      allow read: if owner();
+
+      allow create: if owner()
+        && validInvoice(request.resource.data, id);
+    }
+
+    // =====================================================
+    // PAYMENTS
+    // =====================================================
+
+    match /payments/{id} {
+      allow read: if owner();
+
+      allow create: if owner()
+        && request.resource.data.keys().hasAll([
+          'invoiceId', 'amountCents',
+          'method', 'reference', 'createdAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'invoiceId', 'amountCents',
+          'method', 'reference', 'createdAt'
+        ])
+        && request.resource.data.invoiceId == id
+        && request.resource.data.amountCents == get(
+          /databases/$(database)/documents/invoices/$(id)
+        ).data.grandTotalCents
+        && request.resource.data.method in [
+          'Cash', 'Card', 'Bank Transfer'
+        ]
+        && request.resource.data.reference is string
+        && request.resource.data.reference.size() <= 120
+        && request.resource.data.createdAt == request.time;
+    }
+  }
+}
