@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import 'autocare_money.dart';
 import 'autocare_service.dart';
+import 'invoice_pdf_screen.dart';
 
 class InvoiceScreen extends StatefulWidget {
   final String jobId;
@@ -64,6 +65,14 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
     );
   }
 
+  void _openPdf() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => InvoicePdfScreen(jobId: widget.jobId),
+      ),
+    );
+  }
+
   Future<void> _copySummary(
     Map<String, dynamic> invoice,
     String paymentStatus,
@@ -103,7 +112,13 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
         builder: (context, invoiceSnapshot) {
           if (invoiceSnapshot.hasError) {
             return const Center(
-              child: Text('Unable to load invoice. Check permissions.'),
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Text(
+                  'Unable to load invoice. Check permissions.',
+                  textAlign: TextAlign.center,
+                ),
+              ),
             );
           }
 
@@ -144,35 +159,65 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                           fontWeight: FontWeight.w900,
                         ),
                       ),
+
                       const SizedBox(height: 8),
 
                       SelectableText('Invoice AC-${widget.jobId}'),
+
+                      const SizedBox(height: 4),
 
                       Text(_date(invoice['createdAt'] as Timestamp?)),
 
                       const SizedBox(height: 24),
 
-                      Text(
-                        invoice['customerName'] as String,
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w800,
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(18),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'BILL TO',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 1,
+                                ),
+                              ),
+
+                              const SizedBox(height: 12),
+
+                              Text(
+                                invoice['customerName'] as String,
+                                style: const TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+
+                              const SizedBox(height: 8),
+
+                              Text(invoice['customerPhone'] as String),
+
+                              const SizedBox(height: 6),
+
+                              Text('Vehicle: ${invoice['registration']}'),
+                            ],
+                          ),
                         ),
                       ),
-                      const SizedBox(height: 6),
 
-                      Text(invoice['customerPhone'] as String),
-
-                      Text('Vehicle: ${invoice['registration']}'),
-
-                      const SizedBox(height: 20),
-                      const Divider(),
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 24),
 
                       const Text(
                         'PARTS USED',
-                        style: TextStyle(fontWeight: FontWeight.w800),
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1,
+                        ),
                       ),
+
+                      const SizedBox(height: 12),
 
                       StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                         stream: _usage,
@@ -194,7 +239,13 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                             );
                           }
 
-                          final documents = usageSnapshot.data!.docs;
+                          final documents = usageSnapshot.data!.docs.toList();
+
+                          documents.sort((a, b) {
+                            return (a.data()['partName'] as String).compareTo(
+                              b.data()['partName'] as String,
+                            );
+                          });
 
                           if (documents.isEmpty) {
                             return const Padding(
@@ -218,6 +269,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                         },
                       ),
 
+                      const SizedBox(height: 12),
                       const Divider(),
 
                       _amountRow(
@@ -227,13 +279,14 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
 
                       _amountRow('Parts', money(invoice['partsCents'] as int)),
 
+                      const Divider(),
+
                       _amountRow(
                         'TOTAL',
                         money(invoice['grandTotalCents'] as int),
                         bold: true,
                       ),
 
-                      const Divider(),
                       const SizedBox(height: 20),
 
                       if (paymentSnapshot.hasError)
@@ -246,20 +299,25 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                       else ...[
                         Text(
                           paymentStatus,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 22,
                             fontWeight: FontWeight.w900,
+                            color: Theme.of(context).colorScheme.primary,
                           ),
                         ),
+
                         const SizedBox(height: 12),
 
                         if (payment != null) ...[
                           Text('Method: ${payment['method']}'),
+
                           const SizedBox(height: 6),
+
                           Text(
                             'Paid: '
                             '${_date(payment['createdAt'] as Timestamp?)}',
                           ),
+
                           if ((payment['reference'] as String).isNotEmpty) ...[
                             const SizedBox(height: 6),
                             Text('Reference: ${payment['reference']}'),
@@ -281,7 +339,15 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                           ),
                       ],
 
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 24),
+
+                      FilledButton.icon(
+                        onPressed: _openPdf,
+                        icon: const Icon(Icons.picture_as_pdf_outlined),
+                        label: const Text('PDF Preview / Print / Share'),
+                      ),
+
+                      const SizedBox(height: 12),
 
                       OutlinedButton.icon(
                         onPressed: () => _copySummary(invoice, paymentStatus),
@@ -294,6 +360,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                       const Text(
                         'Payment recording does not charge a card '
                         'or transfer money.',
+                        style: TextStyle(fontSize: 12),
                       ),
                     ],
                   ),
@@ -419,6 +486,7 @@ class _PaymentDialogState extends State<_PaymentDialog> {
                     fontWeight: FontWeight.w800,
                   ),
                 ),
+
                 const SizedBox(height: 18),
 
                 DropdownButtonFormField<String>(

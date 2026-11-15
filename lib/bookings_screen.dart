@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'booking_slot_service.dart';
+import 'autocare_service.dart';
+
+// Vehicle booking list
 class VehicleBookingsScreen extends StatefulWidget {
   final String vehicleId;
   final String registration;
@@ -31,44 +35,196 @@ class _VehicleBookingsScreenState extends State<VehicleBookingsScreen> {
         .snapshots();
   }
 
-  String _formatDate(Timestamp timestamp) {
-    final date = timestamp.toDate();
-
-    final day = MaterialLocalizations.of(context).formatMediumDate(date);
-
-    final time = TimeOfDay.fromDateTime(date).format(context);
-
-    return '$day • $time';
+  void _message(String text) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   }
 
-  Color _statusColor(String status) {
-    switch (status) {
-      case 'confirmed':
-        return const Color(0xFF91D8AC);
-      case 'cancelled':
-        return const Color(0xFFFFABA5);
-      default:
-        return Theme.of(context).colorScheme.primary;
+  String _dateLabel(Timestamp timestamp) {
+    final sriLankaTime = timestamp.toDate().toUtc().add(
+      BookingSlotService.sriLankaOffset,
+    );
+
+    final date = MaterialLocalizations.of(context)
+        .formatMediumDate(sriLankaTime);
+
+    final time = BookingSlotService.formatClock(sriLankaTime);
+
+    return '$date • $time (Sri Lanka)';
+  }
+
+  Future<void> _confirmBooking(
+    DocumentReference<Map<String, dynamic>> bookingRef,
+    DateTime expectedStart,
+  ) async {
+    if (!BookingSlotService.isValidSlotStart(expectedStart)) {
+      throw StateError(
+        'This older booking does not use an hourly slot. '
+        'Cancel it and create a new booking.',
+      );
     }
+
+    if (!expectedStart.isAfter(DateTime.now().toUtc())) {
+      throw StateError('A past appointment cannot be confirmed.');
+    }
+
+    // This check also considers older confirmed bookings
+    // that were created before slot reservations were added.
+    final sriLankaStart = expectedStart.add(BookingSlotService.sriLankaOffset);
+
+    final day = DateTime(
+      sriLankaStart.year,
+      sriLankaStart.month,
+      sriLankaStart.day,
+    );
+
+    final daySlots = await BookingSlotService.loadSlots(day);
+
+    final matchingSlots = daySlots.where((slot) {
+      return slot.startAtUtc.isAtSameMomentAs(expectedStart);
+    }).toList();
+
+    if (matchingSlots.isEmpty || !matchingSlots.first.isAvailable) {
+      throw StateError(
+        'This time is no longer available. '
+        'Choose another slot.',
+      );
+    }
+
+    final database = FirebaseFirestore.instance;
+
+    final slotRef = database
+        .collection('bookingSlots')
+        .doc(BookingSlotService.reservationId(expectedStart));
+
+    await database.runTransaction<void>((transaction) async {
+      final bookingSnapshot = await transaction.get(bookingRef);
+
+      final slotSnapshot = await transaction.get(slotRef);
+
+      final booking = bookingSnapshot.data();
+
+      if (booking == null) {
+        throw StateError('Booking not found.');
+      }
+
+      if (booking['status'] != 'pending') {
+        throw StateError(
+          'This booking status has changed. '
+          'Please check the booking list.',
+        );
+      }
+
+      final currentStart = (booking['scheduledAt'] as Timestamp)
+          .toDate()
+          .toUtc();
+
+      if (!currentStart.isAtSameMomentAs(expectedStart)) {
+        throw StateError('The booking time changed. Please try again.');
+      }
+
+      if (!currentStart.isAfter(DateTime.now().toUtc())) {
+        throw StateError('This appointment time has already passed.');
+      }
+
+      if (slotSnapshot.exists) {
+        throw StateError(
+          'Another booking has reserved this slot. '
+          'Choose another time.',
+        );
+      }
+
+      transaction.set(slotRef, {
+        'bookingId': bookingRef.id,
+        'startAt': Timestamp.fromDate(currentStart),
+        'endAt': Timestamp.fromDate(
+          currentStart.add(BookingSlotService.slotDuration),
+        ),
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      transaction.update(bookingRef, {
+        'status': 'confirmed',
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    });
+  }
+
+  Future<void> _cancelBooking(
+    DocumentReference<Map<String, dynamic>> bookingRef,
+    DateTime expectedStart,
+  ) async {
+    final database = FirebaseFirestore.instance;
+
+    final jobRef = database.collection('jobCards').doc(bookingRef.id);
+
+    final slotRef = database
+        .collection('bookingSlots')
+        .doc(BookingSlotService.reservationId(expectedStart));
+
+    await database.runTransaction<void>((transaction) async {
+      final bookingSnapshot = await transaction.get(bookingRef);
+
+      final jobSnapshot = await transaction.get(jobRef);
+
+      final slotSnapshot = await transaction.get(slotRef);
+
+      final booking = bookingSnapshot.data();
+
+      if (booking == null) {
+        throw StateError('Booking not found.');
+      }
+
+      if (!['pending', 'confirmed'].contains(booking['status'])) {
+        throw StateError('This booking can no longer be cancelled.');
+      }
+
+      if (jobSnapshot.exists) {
+        throw StateError(
+          'This booking already has a Job Card '
+          'and cannot be cancelled.',
+        );
+      }
+
+      final currentStart = (booking['scheduledAt'] as Timestamp)
+          .toDate()
+          .toUtc();
+
+      if (!currentStart.isAtSameMomentAs(expectedStart)) {
+        throw StateError('The booking time changed. Please try again.');
+      }
+
+      final slot = slotSnapshot.data();
+
+      // Only release a slot owned by this booking.
+      if (slot != null && slot['bookingId'] == bookingRef.id) {
+        transaction.delete(slotRef);
+      }
+
+      transaction.update(bookingRef, {
+        'status': 'cancelled',
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    });
   }
 
   Future<void> _changeStatus(
-    DocumentReference<Map<String, dynamic>> reference,
+    QueryDocumentSnapshot<Map<String, dynamic>> document,
     String nextStatus,
   ) async {
     if (_updatingId != null) return;
 
-    final isCancel = nextStatus == 'cancelled';
+    final cancelling = nextStatus == 'cancelled';
 
     final accepted = await showDialog<bool>(
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: Text(isCancel ? 'Cancel booking?' : 'Confirm booking?'),
+          title: Text(cancelling ? 'Cancel Booking?' : 'Confirm Booking?'),
           content: Text(
-            isCancel
-                ? 'The booking will remain in the history as cancelled.'
-                : 'Mark this service appointment as confirmed?',
+            cancelling
+                ? 'The booking will remain in history. '
+                      'Its reserved slot will be released.'
+                : 'Reserve this one-hour appointment?',
           ),
           actions: [
             TextButton(
@@ -81,98 +237,66 @@ class _VehicleBookingsScreenState extends State<VehicleBookingsScreen> {
               onPressed: () {
                 Navigator.of(dialogContext).pop(true);
               },
-              child: Text(isCancel ? 'Cancel Booking' : 'Confirm'),
+              child: Text(cancelling ? 'Cancel Booking' : 'Confirm'),
             ),
           ],
         );
       },
     );
 
-    if (accepted != true || !mounted || _updatingId != null) return;
+    if (accepted != true || !mounted || _updatingId != null) {
+      return;
+    }
 
-    setState(() => _updatingId = reference.id);
+    final expectedStart = (document.data()['scheduledAt'] as Timestamp)
+        .toDate()
+        .toUtc();
+
+    setState(() => _updatingId = document.id);
 
     try {
-      await FirebaseFirestore.instance.runTransaction<void>((
-        transaction,
-      ) async {
-        final snapshot = await transaction.get(reference);
-        final data = snapshot.data();
-
-        if (!snapshot.exists || data == null) {
-          throw StateError('This booking no longer exists.');
-        }
-
-        final currentStatus = data['status'] as String?;
-
-        final canConfirm =
-            currentStatus == 'pending' && nextStatus == 'confirmed';
-
-        final canCancel =
-            (currentStatus == 'pending' || currentStatus == 'confirmed') &&
-            nextStatus == 'cancelled';
-
-        if (!canConfirm && !canCancel) {
-          throw StateError(
-            'The booking status has changed. Please check the list.',
-          );
-        }
-
-        if (canConfirm) {
-          final scheduledAt = data['scheduledAt'] as Timestamp;
-
-          if (!scheduledAt.toDate().isAfter(DateTime.now())) {
-            throw StateError('A past appointment cannot be confirmed.');
-          }
-        }
-
-        transaction.update(reference, {
-          'status': nextStatus,
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
-      });
+      if (cancelling) {
+        await _cancelBooking(document.reference, expectedStart);
+      } else {
+        await _confirmBooking(document.reference, expectedStart);
+      }
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(isCancel ? 'Booking cancelled.' : 'Booking confirmed.'),
-        ),
+      _message(
+        cancelling
+            ? 'Booking cancelled. Its reservation was released.'
+            : 'Booking confirmed and slot reserved.',
       );
-    } on StateError catch (error) {
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('${error.message}')));
-    } on FirebaseException catch (error) {
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            error.code == 'permission-denied'
-                ? 'Update denied. Check your booking rules and account.'
-                : 'Unable to update booking. Check your connection.',
-          ),
-        ),
-      );
-    } catch (_) {
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Unable to update booking. Please try again.'),
-        ),
-      );
+    } catch (error) {
+      if (mounted) {
+        _message(operationError(error));
+      }
     } finally {
-      if (mounted) setState(() => _updatingId = null);
+      if (mounted) {
+        setState(() => _updatingId = null);
+      }
     }
+  }
+
+  Widget _filterChip(String value, String label) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: ChoiceChip(
+        label: Text(label),
+        selected: _filter == value,
+        onSelected: (_) {
+          setState(() => _filter = value);
+        },
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text('${widget.registration} Bookings')),
+
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _updatingId != null
             ? null
@@ -189,9 +313,9 @@ class _VehicleBookingsScreenState extends State<VehicleBookingsScreen> {
         icon: const Icon(Icons.add),
         label: const Text('New Booking'),
       ),
+
       body: Column(
         children: [
-          // Status filters
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -214,8 +338,8 @@ class _VehicleBookingsScreenState extends State<VehicleBookingsScreen> {
                     child: Padding(
                       padding: EdgeInsets.all(24),
                       child: Text(
-                        'Unable to load bookings. Check your '
-                        'connection and Firestore rules.',
+                        'Unable to load bookings. '
+                        'Check your connection and permissions.',
                         textAlign: TextAlign.center,
                       ),
                     ),
@@ -231,22 +355,17 @@ class _VehicleBookingsScreenState extends State<VehicleBookingsScreen> {
                 }).toList();
 
                 bookings.sort((a, b) {
-                  final aDate = a.data()['scheduledAt'] as Timestamp;
-                  final bDate = b.data()['scheduledAt'] as Timestamp;
-
-                  return bDate.compareTo(aDate);
+                  return (b.data()['scheduledAt'] as Timestamp).compareTo(
+                    a.data()['scheduledAt'] as Timestamp,
+                  );
                 });
 
                 if (bookings.isEmpty) {
                   return Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Text(
-                        _filter == 'all'
-                            ? 'No bookings yet.\nTap New Booking to begin.'
-                            : 'No $_filter bookings.',
-                        textAlign: TextAlign.center,
-                      ),
+                    child: Text(
+                      _filter == 'all'
+                          ? 'No bookings yet. Tap New Booking.'
+                          : 'No $_filter bookings.',
                     ),
                   );
                 }
@@ -259,72 +378,76 @@ class _VehicleBookingsScreenState extends State<VehicleBookingsScreen> {
                     final booking = bookings[index];
                     final data = booking.data();
 
-                    final service = data['serviceType'] as String;
-                    final notes = data['notes'] as String;
-                    final scheduledAt = data['scheduledAt'] as Timestamp;
                     final status = data['status'] as String;
+                    final notes = data['notes'] as String;
 
-                    final busy = _updatingId == booking.id;
-                    final actionsEnabled = _updatingId == null;
+                    final timestamp = data['scheduledAt'] as Timestamp;
+
+                    final start = timestamp.toDate().toUtc();
+
+                    final hourlySlot = BookingSlotService.isValidSlotStart(
+                      start,
+                    );
 
                     final canConfirm =
                         status == 'pending' &&
-                        scheduledAt.toDate().isAfter(DateTime.now());
+                        hourlySlot &&
+                        start.isAfter(DateTime.now().toUtc());
 
-                    final canCancel =
-                        status == 'pending' || status == 'confirmed';
+                    final canCancel = ['pending', 'confirmed'].contains(status);
+
+                    final busy = _updatingId == booking.id;
+                    final enabled = _updatingId == null;
 
                     return Card(
                       child: Padding(
                         padding: const EdgeInsets.all(18),
                         child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.event_available_outlined,
-                                  color: Theme.of(context).colorScheme.primary,
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Text(
-                                    service,
-                                    style: const TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                ),
-                              ],
+                            Text(
+                              data['serviceType'] as String,
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w800,
+                              ),
                             ),
-                            const SizedBox(height: 14),
-                            Text(_formatDate(scheduledAt)),
+
                             const SizedBox(height: 12),
 
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                border: Border.all(color: _statusColor(status)),
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Text(
-                                status.toUpperCase(),
-                                style: TextStyle(
-                                  color: _statusColor(status),
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 1,
-                                ),
+                            Text(_dateLabel(timestamp)),
+
+                            const SizedBox(height: 10),
+
+                            Text(
+                              status.toUpperCase(),
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.primary,
+                                fontWeight: FontWeight.w800,
                               ),
                             ),
 
                             if (notes.isNotEmpty) ...[
-                              const SizedBox(height: 14),
+                              const SizedBox(height: 12),
                               Text(notes),
+                            ],
+
+                            if (status == 'pending' && !hourlySlot) ...[
+                              const SizedBox(height: 12),
+                              const Text(
+                                'This older booking uses a custom time. '
+                                'Cancel and rebook using an hourly slot.',
+                                style: TextStyle(fontSize: 12),
+                              ),
+                            ],
+
+                            if (status == 'pending' &&
+                                !start.isAfter(DateTime.now().toUtc())) ...[
+                              const SizedBox(height: 12),
+                              const Text(
+                                'This appointment time has passed.',
+                                style: TextStyle(fontSize: 12),
+                              ),
                             ],
 
                             if (busy) ...[
@@ -340,30 +463,27 @@ class _VehicleBookingsScreenState extends State<VehicleBookingsScreen> {
                                 children: [
                                   if (canConfirm)
                                     FilledButton.icon(
-                                      onPressed: actionsEnabled
+                                      onPressed: enabled
                                           ? () => _changeStatus(
-                                              booking.reference,
+                                              booking,
                                               'confirmed',
                                             )
                                           : null,
                                       icon: const Icon(
                                         Icons.check_circle_outline,
-                                        size: 19,
                                       ),
                                       label: const Text('Confirm'),
                                     ),
+
                                   if (canCancel)
                                     OutlinedButton.icon(
-                                      onPressed: actionsEnabled
+                                      onPressed: enabled
                                           ? () => _changeStatus(
-                                              booking.reference,
+                                              booking,
                                               'cancelled',
                                             )
                                           : null,
-                                      icon: const Icon(
-                                        Icons.cancel_outlined,
-                                        size: 19,
-                                      ),
+                                      icon: const Icon(Icons.cancel_outlined),
                                       label: const Text('Cancel'),
                                     ),
                                 ],
@@ -382,21 +502,9 @@ class _VehicleBookingsScreenState extends State<VehicleBookingsScreen> {
       ),
     );
   }
-
-  Widget _filterChip(String value, String label) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: ChoiceChip(
-        label: Text(label),
-        selected: _filter == value,
-        onSelected: (_) {
-          setState(() => _filter = value);
-        },
-      ),
-    );
-  }
 }
 
+// New booking with available hourly slots.
 class AddBookingScreen extends StatefulWidget {
   final String vehicleId;
   final String registration;
@@ -413,7 +521,7 @@ class AddBookingScreen extends StatefulWidget {
 
 class _AddBookingScreenState extends State<AddBookingScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _notesController = TextEditingController();
+  final _notes = TextEditingController();
 
   final _bookingRef = FirebaseFirestore.instance.collection('bookings').doc();
 
@@ -425,122 +533,215 @@ class _AddBookingScreenState extends State<AddBookingScreen> {
     'Other Repair',
   ];
 
+  late DateTime _selectedDay;
+  late Future<List<BookingSlot>> _slotsFuture;
+
   String? _service;
-  DateTime? _scheduledAt;
+  BookingSlot? _selectedSlot;
+
   bool _saving = false;
 
-  Future<void> _pickDateTime() async {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
+  @override
+  void initState() {
+    super.initState();
 
-    final previous = _scheduledAt;
+    _selectedDay = BookingSlotService.todayInSriLanka();
 
-    final initialDate = previous != null && !previous.isBefore(today)
-        ? previous
-        : now;
+    _slotsFuture = BookingSlotService.loadSlots(_selectedDay);
+  }
 
-    final date = await showDatePicker(
+  void _refreshSlots() {
+    setState(() {
+      _selectedSlot = null;
+      _slotsFuture = BookingSlotService.loadSlots(_selectedDay);
+    });
+  }
+
+  Future<void> _chooseDay() async {
+    final today = BookingSlotService.todayInSriLanka();
+
+    final initialDay = _selectedDay.isBefore(today) ? today : _selectedDay;
+
+    final picked = await showDatePicker(
       context: context,
-      initialDate: initialDate,
+      initialDate: initialDay,
       firstDate: today,
-      lastDate: DateTime(now.year + 2, 12, 31),
+      lastDate: today.add(const Duration(days: 90)),
     );
 
-    if (date == null || !mounted) return;
+    if (picked == null || !mounted) return;
 
-    final time = await showTimePicker(
-      context: context,
-      initialTime: previous == null
-          ? const TimeOfDay(hour: 9, minute: 0)
-          : TimeOfDay.fromDateTime(previous),
-    );
+    setState(() {
+      _selectedDay = picked;
+      _selectedSlot = null;
+      _slotsFuture = BookingSlotService.loadSlots(_selectedDay);
+    });
+  }
 
-    if (time == null || !mounted) return;
+  void _message(String text) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+  }
 
-    final selected = DateTime(
-      date.year,
-      date.month,
-      date.day,
-      time.hour,
-      time.minute,
-    );
-
-    if (!selected.isAfter(DateTime.now())) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a future date and time.')),
-      );
+  Future<void> _save() async {
+    if (_saving || !_formKey.currentState!.validate()) {
       return;
     }
 
-    setState(() => _scheduledAt = selected);
-  }
+    final selectedSlot = _selectedSlot;
 
-  Future<void> _saveBooking() async {
-    if (_saving || !_formKey.currentState!.validate()) return;
+    if (selectedSlot == null) {
+      _message('Select an available time slot.');
+      return;
+    }
 
-    final scheduledAt = _scheduledAt;
-
-    if (scheduledAt == null || !scheduledAt.isAfter(DateTime.now())) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a future date and time.')),
-      );
+    if (!selectedSlot.startAtUtc.isAfter(DateTime.now().toUtc())) {
+      _message('This time has passed. Select another slot.');
+      _refreshSlots();
       return;
     }
 
     FocusScope.of(context).unfocus();
+
+    final service = _service!;
+    final notes = _notes.text.trim();
+    final selectedDay = _selectedDay;
+
     setState(() => _saving = true);
 
     try {
+      // Recheck before saving the request.
+      final latestSlots = await BookingSlotService.loadSlots(selectedDay);
+
+      final matching = latestSlots.where((slot) {
+        return slot.startAtUtc.isAtSameMomentAs(selectedSlot.startAtUtc);
+      }).toList();
+
+      if (matching.isEmpty || !matching.first.isAvailable) {
+        throw StateError(
+          'This time is no longer available. '
+          'Refresh and select another slot.',
+        );
+      }
+
       await _bookingRef.set({
         'vehicleId': widget.vehicleId,
-        'serviceType': _service!,
-        'scheduledAt': Timestamp.fromDate(scheduledAt),
-        'notes': _notesController.text.trim(),
+        'serviceType': service,
+        'scheduledAt': Timestamp.fromDate(selectedSlot.startAtUtc),
+        'notes': notes,
         'status': 'pending',
         'createdAt': FieldValue.serverTimestamp(),
       });
 
       if (!mounted) return;
+
       Navigator.of(context).pop();
-    } on FirebaseException catch (error) {
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            error.code == 'permission-denied'
-                ? 'Check your UID, booking rules and selected date.'
-                : 'Unable to save booking. Please try again.',
-          ),
-        ),
-      );
-    } catch (_) {
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Unable to save booking. Please try again.'),
-        ),
-      );
+    } catch (error) {
+      if (mounted) {
+        _message(operationError(error));
+      }
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) {
+        setState(() => _saving = false);
+      }
     }
+  }
+
+  Widget _slotSelector() {
+    return FutureBuilder<List<BookingSlot>>(
+      future: _slotsFuture,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Unable to load availability. '
+                'Check your connection and permissions.',
+              ),
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                onPressed: _saving ? null : _refreshSlots,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Retry'),
+              ),
+            ],
+          );
+        }
+
+        if (!snapshot.hasData) {
+          return const Padding(
+            padding: EdgeInsets.all(24),
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        final slots = snapshot.data!;
+
+        final availableCount = slots.where((slot) => slot.isAvailable).length;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              '$availableCount available slots',
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+
+            const SizedBox(height: 14),
+
+            Wrap(
+              spacing: 10,
+              runSpacing: 12,
+              children: slots.map((slot) {
+                final selected =
+                    _selectedSlot != null &&
+                    _selectedSlot!.startAtUtc.isAtSameMomentAs(slot.startAtUtc);
+
+                return ChoiceChip(
+                  label: Text(
+                    '${slot.label}\n${slot.statusLabel}',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  selected: selected,
+                  onSelected: _saving || !slot.isAvailable
+                      ? null
+                      : (_) {
+                          setState(() {
+                            _selectedSlot = slot;
+                          });
+                        },
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 8,
+                  ),
+                );
+              }).toList(),
+            ),
+
+            if (availableCount == 0) ...[
+              const SizedBox(height: 16),
+              const Text(
+                'No available slots for this day. '
+                'Please choose another date.',
+              ),
+            ],
+          ],
+        );
+      },
+    );
   }
 
   @override
   void dispose() {
-    _notesController.dispose();
+    _notes.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final selected = _scheduledAt;
-
-    final dateLabel = selected == null
-        ? 'Select date and time'
-        : '${MaterialLocalizations.of(context).formatMediumDate(selected)}'
-              ' • ${TimeOfDay.fromDateTime(selected).format(context)}';
+    final dateLabel = MaterialLocalizations.of(context)
+        .formatMediumDate(_selectedDay);
 
     return PopScope(
       canPop: !_saving,
@@ -549,12 +750,13 @@ class _AddBookingScreenState extends State<AddBookingScreen> {
           title: const Text('New Booking'),
           automaticallyImplyLeading: !_saving,
         ),
+
         body: SafeArea(
           child: Center(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(24),
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 480),
+                constraints: const BoxConstraints(maxWidth: 560),
                 child: Form(
                   key: _formKey,
                   child: Column(
@@ -567,8 +769,15 @@ class _AddBookingScreenState extends State<AddBookingScreen> {
                           fontWeight: FontWeight.w800,
                         ),
                       ),
+
                       const SizedBox(height: 8),
-                      const Text('Schedule a service for this vehicle.'),
+
+                      const Text(
+                        'One-hour appointments'
+                        ' • 9 AM–5 PM'
+                        ' • Sri Lanka time',
+                      ),
+
                       const SizedBox(height: 24),
 
                       DropdownButtonFormField<String>(
@@ -598,33 +807,55 @@ class _AddBookingScreenState extends State<AddBookingScreen> {
                       const SizedBox(height: 20),
 
                       OutlinedButton.icon(
-                        onPressed: _saving ? null : _pickDateTime,
+                        onPressed: _saving ? null : _chooseDay,
                         icon: const Icon(Icons.calendar_month_outlined),
                         label: Text(dateLabel),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.all(18),
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton.icon(
+                          onPressed: _saving ? null : _refreshSlots,
+                          icon: const Icon(Icons.refresh, size: 18),
+                          label: const Text('Refresh availability'),
                         ),
                       ),
 
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 8),
+
+                      _slotSelector(),
+
+                      const SizedBox(height: 24),
 
                       TextFormField(
-                        controller: _notesController,
+                        controller: _notes,
                         enabled: !_saving,
                         maxLength: 500,
                         minLines: 3,
                         maxLines: 5,
                         decoration: const InputDecoration(
                           labelText: 'Notes (optional)',
-                          hintText: 'Describe any vehicle problems...',
+                          hintText: 'Describe the vehicle problem...',
                           alignLabelWithHint: true,
                         ),
                       ),
 
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 12),
+
+                      const Text(
+                        'This creates a pending request. '
+                        'The appointment is reserved when confirmed.',
+                        style: TextStyle(fontSize: 12),
+                      ),
+
+                      const SizedBox(height: 20),
 
                       FilledButton.icon(
-                        onPressed: _saving ? null : _saveBooking,
+                        onPressed: _saving || _selectedSlot == null
+                            ? null
+                            : _save,
                         icon: _saving
                             ? const SizedBox(
                                 width: 20,
@@ -634,7 +865,9 @@ class _AddBookingScreenState extends State<AddBookingScreen> {
                                 ),
                               )
                             : const Icon(Icons.event_available_outlined),
-                        label: Text(_saving ? 'Saving...' : 'Save Booking'),
+                        label: Text(
+                          _saving ? 'Saving...' : 'Save Booking Request',
+                        ),
                       ),
                     ],
                   ),

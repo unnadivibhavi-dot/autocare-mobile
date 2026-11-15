@@ -1,77 +1,336 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-class CustomersScreen extends StatelessWidget {
+class CustomersScreen extends StatefulWidget {
   const CustomersScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final customers = FirebaseFirestore.instance
-        .collection('customers')
-        .orderBy('createdAt', descending: true);
+  State<CustomersScreen> createState() => _CustomersScreenState();
+}
 
+class _CustomersScreenState extends State<CustomersScreen> {
+  final _searchController = TextEditingController();
+
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _customers;
+
+  String _query = '';
+  bool _sortByName = false;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _customers = FirebaseFirestore.instance
+        .collection('customers')
+        .orderBy('createdAt', descending: true)
+        .snapshots();
+  }
+
+  String _digitsOnly(String value) {
+    return value.replaceAll(RegExp(r'\D'), '');
+  }
+
+  String _localPhone(String value) {
+    final digits = _digitsOnly(value);
+
+    // Example: +94 71 123 4567 becomes 0711234567.
+    if (digits.startsWith('94') && digits.length == 11) {
+      return '0${digits.substring(2)}';
+    }
+
+    return digits;
+  }
+
+  bool _matchesSearch(Map<String, dynamic> data) {
+    if (_query.isEmpty) return true;
+
+    final name = (data['name'] as String? ?? '').toLowerCase();
+
+    final email = (data['email'] as String? ?? '').toLowerCase();
+
+    final phone = data['phone'] as String? ?? '';
+
+    if (name.contains(_query) ||
+        email.contains(_query) ||
+        phone.toLowerCase().contains(_query)) {
+      return true;
+    }
+
+    final isPhoneSearch = RegExp(r'^[+0-9\s()-]+$').hasMatch(_query);
+
+    if (!isPhoneSearch) return false;
+
+    final queryDigits = _digitsOnly(_query);
+
+    if (queryDigits.isEmpty) return false;
+
+    return _digitsOnly(phone).contains(queryDigits) ||
+        _localPhone(phone).contains(_localPhone(_query));
+  }
+
+  void _clearSearch() {
+    _searchController.clear();
+
+    setState(() => _query = '');
+  }
+
+  void _openAddCustomer() {
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => const AddCustomerScreen()));
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Customers')),
+
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          Navigator.of(context).push(
-            MaterialPageRoute<void>(builder: (_) => const AddCustomerScreen()),
-          );
-        },
+        onPressed: _openAddCustomer,
         icon: const Icon(Icons.person_add_alt_1),
         label: const Text('Add Customer'),
       ),
-      body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: customers.snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return const Center(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Text(
-                  'Unable to load customers. Check your internet '
-                  'connection and Firestore permissions.',
-                  textAlign: TextAlign.center,
-                ),
+
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: 'Search name, phone or email',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _searchController.text.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: 'Clear search',
+                        onPressed: _clearSearch,
+                        icon: const Icon(Icons.close),
+                      ),
               ),
-            );
-          }
+              onChanged: (value) {
+                setState(() {
+                  _query = value.trim().toLowerCase();
+                });
+              },
+            ),
+          ),
 
-          if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          final documents = snapshot.data!.docs;
-
-          if (documents.isEmpty) {
-            return const Center(
-              child: Text('No customers yet. Tap Add Customer to begin.'),
-            );
-          }
-
-          return ListView.separated(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-            itemCount: documents.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 8),
-            itemBuilder: (context, index) {
-              final data = documents[index].data();
-              final name = data['name'] as String? ?? '';
-              final phone = data['phone'] as String? ?? '';
-              final email = data['email'] as String? ?? '';
-
-              return Card(
-                child: ListTile(
-                  leading: const CircleAvatar(
-                    child: Icon(Icons.person_outline),
-                  ),
-                  title: Text(name),
-                  subtitle: Text(email.isEmpty ? phone : '$phone\n$email'),
-                  isThreeLine: email.isNotEmpty,
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              children: [
+                ChoiceChip(
+                  label: const Text('Newest first'),
+                  selected: !_sortByName,
+                  onSelected: (_) {
+                    setState(() => _sortByName = false);
+                  },
                 ),
-              );
-            },
-          );
-        },
+                const SizedBox(width: 10),
+                ChoiceChip(
+                  label: const Text('Name A–Z'),
+                  selected: _sortByName,
+                  onSelected: (_) {
+                    setState(() => _sortByName = true);
+                  },
+                ),
+              ],
+            ),
+          ),
+
+          Expanded(
+            child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: _customers,
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Text(
+                        'Unable to load customers. '
+                        'Check your connection and permissions.',
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  );
+                }
+
+                if (!snapshot.hasData) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                final allCustomers = snapshot.data!.docs;
+
+                if (allCustomers.isEmpty) {
+                  return const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Text(
+                        'No customers yet.\n'
+                        'Tap Add Customer to begin.',
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  );
+                }
+
+                final visibleCustomers = allCustomers.where((customer) {
+                  return _matchesSearch(customer.data());
+                }).toList();
+
+                if (_sortByName) {
+                  visibleCustomers.sort((a, b) {
+                    final first = (a.data()['name'] as String? ?? '')
+                        .trim()
+                        .toLowerCase();
+
+                    final second = (b.data()['name'] as String? ?? '')
+                        .trim()
+                        .toLowerCase();
+
+                    return first.compareTo(second);
+                  });
+                }
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(18, 4, 18, 12),
+                      child: Text(
+                        '${visibleCustomers.length} of '
+                        '${allCustomers.length} customers',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+
+                    Expanded(
+                      child: visibleCustomers.isEmpty
+                          ? Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(24),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.search_off, size: 48),
+                                    const SizedBox(height: 14),
+                                    const Text(
+                                      'No matching customers.',
+                                      textAlign: TextAlign.center,
+                                    ),
+                                    const SizedBox(height: 12),
+                                    TextButton(
+                                      onPressed: _clearSearch,
+                                      child: const Text('Clear search'),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            )
+                          : ListView.separated(
+                              padding: const EdgeInsets.fromLTRB(
+                                16,
+                                0,
+                                16,
+                                100,
+                              ),
+                              itemCount: visibleCustomers.length,
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(height: 12),
+                              itemBuilder: (context, index) {
+                                final data = visibleCustomers[index].data();
+
+                                final name = data['name'] as String? ?? '';
+
+                                final phone = data['phone'] as String? ?? '';
+
+                                final email = data['email'] as String? ?? '';
+
+                                return Card(
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(18),
+                                    child: Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        CircleAvatar(
+                                          radius: 24,
+                                          child: Icon(
+                                            Icons.person_outline,
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .primary,
+                                          ),
+                                        ),
+
+                                        const SizedBox(width: 14),
+
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                name,
+                                                style: const TextStyle(
+                                                  fontSize: 18,
+                                                  fontWeight: FontWeight.w800,
+                                                ),
+                                              ),
+
+                                              const SizedBox(height: 10),
+
+                                              Row(
+                                                children: [
+                                                  const Icon(
+                                                    Icons.phone_outlined,
+                                                    size: 16,
+                                                  ),
+                                                  const SizedBox(width: 8),
+                                                  Expanded(child: Text(phone)),
+                                                ],
+                                              ),
+
+                                              if (email.isNotEmpty) ...[
+                                                const SizedBox(height: 8),
+                                                Row(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  children: [
+                                                    const Icon(
+                                                      Icons.email_outlined,
+                                                      size: 16,
+                                                    ),
+                                                    const SizedBox(width: 8),
+                                                    Expanded(
+                                                      child: Text(email),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ],
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -86,19 +345,22 @@ class AddCustomerScreen extends StatefulWidget {
 
 class _AddCustomerScreenState extends State<AddCustomerScreen> {
   final _formKey = GlobalKey<FormState>();
+
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
   final _emailController = TextEditingController();
 
-  bool _saving = false;
-
-  // Reuse the same document ID if the user retries a failed save.
   final _customerRef = FirebaseFirestore.instance.collection('customers').doc();
 
+  bool _saving = false;
+
   Future<void> _saveCustomer() async {
-    if (_saving || !_formKey.currentState!.validate()) return;
+    if (_saving || !_formKey.currentState!.validate()) {
+      return;
+    }
 
     FocusScope.of(context).unfocus();
+
     setState(() => _saving = true);
 
     try {
@@ -110,6 +372,7 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
       });
 
       if (!mounted) return;
+
       Navigator.of(context).pop();
     } on FirebaseException catch (error) {
       if (!mounted) return;
@@ -140,6 +403,7 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
     _nameController.dispose();
     _phoneController.dispose();
     _emailController.dispose();
+
     super.dispose();
   }
 
@@ -174,13 +438,14 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
                           prefixIcon: Icon(Icons.person_outline),
                         ),
                         validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
-                            return 'Enter the customer name.';
-                          }
-                          return null;
+                          return value == null || value.trim().isEmpty
+                              ? 'Enter the customer name.'
+                              : null;
                         },
                       ),
+
                       const SizedBox(height: 16),
+
                       TextFormField(
                         controller: _phoneController,
                         enabled: !_saving,
@@ -198,15 +463,23 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
                             return 'Enter a phone number.';
                           }
 
-                          if (!RegExp(r'^\+?[0-9 ()-]{7,30}$')
-                              .hasMatch(phone)) {
+                          final digits = phone.replaceAll(RegExp(r'\D'), '');
+
+                          final validCharacters = RegExp(r'^\+?[0-9 ()-]+$')
+                              .hasMatch(phone);
+
+                          if (!validCharacters ||
+                              digits.length < 7 ||
+                              digits.length > 15) {
                             return 'Enter a valid phone number.';
                           }
 
                           return null;
                         },
                       ),
+
                       const SizedBox(height: 16),
+
                       TextFormField(
                         controller: _emailController,
                         enabled: !_saving,
@@ -214,7 +487,9 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
                         keyboardType: TextInputType.emailAddress,
                         textInputAction: TextInputAction.done,
                         autocorrect: false,
-                        onFieldSubmitted: (_) => _saveCustomer(),
+                        onFieldSubmitted: (_) {
+                          _saveCustomer();
+                        },
                         decoration: const InputDecoration(
                           labelText: 'Email (optional)',
                           prefixIcon: Icon(Icons.email_outlined),
@@ -231,22 +506,21 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
                           return null;
                         },
                       ),
+
                       const SizedBox(height: 24),
+
                       FilledButton.icon(
                         onPressed: _saving ? null : _saveCustomer,
                         icon: _saving
                             ? const SizedBox(
-                                width: 20,
                                 height: 20,
+                                width: 20,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2,
                                 ),
                               )
                             : const Icon(Icons.save_outlined),
                         label: Text(_saving ? 'Saving...' : 'Save Customer'),
-                        style: FilledButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                        ),
                       ),
                     ],
                   ),

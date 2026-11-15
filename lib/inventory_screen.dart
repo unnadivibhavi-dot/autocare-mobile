@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-// Money is stored as integer cents.
+// Convert LKR text into integer cents.
 int? parsePartPrice(String value) {
   final text = value.trim();
 
@@ -10,7 +10,9 @@ int? parsePartPrice(String value) {
   }
 
   final pieces = text.split('.');
+
   final whole = int.parse(pieces[0]);
+
   final fraction = pieces.length == 2
       ? int.parse(pieces[1].padRight(2, '0'))
       : 0;
@@ -21,7 +23,8 @@ int? parsePartPrice(String value) {
 }
 
 String formatPartPrice(int cents) {
-  return '${cents ~/ 100}.${(cents % 100).toString().padLeft(2, '0')}';
+  return '${cents ~/ 100}.'
+      '${(cents % 100).toString().padLeft(2, '0')}';
 }
 
 class InventoryScreen extends StatefulWidget {
@@ -32,7 +35,11 @@ class InventoryScreen extends StatefulWidget {
 }
 
 class _InventoryScreenState extends State<InventoryScreen> {
+  final _searchController = TextEditingController();
+
   late final Stream<QuerySnapshot<Map<String, dynamic>>> _parts;
+
+  String _query = '';
   bool _lowStockOnly = false;
 
   @override
@@ -45,21 +52,86 @@ class _InventoryScreenState extends State<InventoryScreen> {
         .snapshots();
   }
 
+  String _compact(String value) {
+    return value.toLowerCase().replaceAll(RegExp(r'[\s_-]'), '');
+  }
+
+  bool _matchesSearch(String partCode, Map<String, dynamic> data) {
+    if (_query.isEmpty) return true;
+
+    final name = (data['name'] as String? ?? '').toLowerCase();
+
+    final code = partCode.toLowerCase();
+
+    if (name.contains(_query) || code.contains(_query)) {
+      return true;
+    }
+
+    final compactQuery = _compact(_query);
+
+    return compactQuery.isNotEmpty && _compact(partCode).contains(compactQuery);
+  }
+
+  void _clearFilters() {
+    _searchController.clear();
+
+    setState(() {
+      _query = '';
+      _lowStockOnly = false;
+    });
+  }
+
+  void _openAddPart() {
+    Navigator.of(context)
+        .push(MaterialPageRoute<void>(builder: (_) => const AddPartScreen()));
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Spare Parts')),
+
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          Navigator.of(context).push(
-            MaterialPageRoute<void>(builder: (_) => const AddPartScreen()),
-          );
-        },
+        onPressed: _openAddPart,
         icon: const Icon(Icons.add),
         label: const Text('Add Part'),
       ),
+
       body: Column(
         children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: 'Search part name or code',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _searchController.text.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: 'Clear search',
+                        onPressed: () {
+                          _searchController.clear();
+
+                          setState(() => _query = '');
+                        },
+                        icon: const Icon(Icons.close),
+                      ),
+              ),
+              onChanged: (value) {
+                setState(() {
+                  _query = value.trim().toLowerCase();
+                });
+              },
+            ),
+          ),
+
           SwitchListTile(
             title: const Text('Low stock only'),
             subtitle: const Text('At or below the minimum stock level'),
@@ -68,6 +140,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
               setState(() => _lowStockOnly = value);
             },
           ),
+
           Expanded(
             child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
               stream: _parts,
@@ -77,8 +150,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
                     child: Padding(
                       padding: EdgeInsets.all(24),
                       child: Text(
-                        'Unable to load parts. Check your '
-                        'connection and Firestore rules.',
+                        'Unable to load parts. '
+                        'Check your connection and Firestore rules.',
                         textAlign: TextAlign.center,
                       ),
                     ),
@@ -89,98 +162,186 @@ class _InventoryScreenState extends State<InventoryScreen> {
                   return const Center(child: CircularProgressIndicator());
                 }
 
-                final parts = snapshot.data!.docs.where((doc) {
-                  final data = doc.data();
+                final allParts = snapshot.data!.docs;
 
-                  return !_lowStockOnly ||
-                      (data['stock'] as int) <= (data['minStock'] as int);
-                }).toList();
-
-                if (parts.isEmpty) {
-                  return Center(
-                    child: Text(
-                      _lowStockOnly
-                          ? 'No low-stock parts.'
-                          : 'No parts yet. Tap Add Part.',
-                    ),
+                if (allParts.isEmpty) {
+                  return const Center(
+                    child: Text('No parts yet. Tap Add Part.'),
                   );
                 }
 
-                return ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
-                  itemCount: parts.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 12),
-                  itemBuilder: (context, index) {
-                    final part = parts[index];
-                    final data = part.data();
+                final lowStockCount = allParts.where((part) {
+                  final data = part.data();
 
-                    final stock = data['stock'] as int;
-                    final minimum = data['minStock'] as int;
-                    final lowStock = stock <= minimum;
+                  return (data['stock'] as int) <= (data['minStock'] as int);
+                }).length;
 
-                    return Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(18),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.inventory_2_outlined,
-                                  color: Theme.of(context).colorScheme.primary,
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Text(
-                                    data['name'] as String,
-                                    style: const TextStyle(
-                                      fontSize: 19,
-                                      fontWeight: FontWeight.w800,
+                final visibleParts = allParts.where((part) {
+                  final data = part.data();
+
+                  final matchesStock =
+                      !_lowStockOnly ||
+                      (data['stock'] as int) <= (data['minStock'] as int);
+
+                  return matchesStock && _matchesSearch(part.id, data);
+                }).toList();
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
+                      child: Text(
+                        '${visibleParts.length} of '
+                        '${allParts.length} parts'
+                        ' • $lowStockCount low stock',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+
+                    Expanded(
+                      child: visibleParts.isEmpty
+                          ? Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(24),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.search_off, size: 48),
+                                    const SizedBox(height: 14),
+                                    const Text(
+                                      'No parts match these filters.',
+                                      textAlign: TextAlign.center,
                                     ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 10),
-                            Text('Code: ${part.id}'),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Unit price: LKR '
-                              '${formatPartPrice(data['unitPriceCents'] as int)}',
-                            ),
-                            const SizedBox(height: 8),
-                            Text('Available: $stock   •   Minimum: $minimum'),
-                            if (lowStock) ...[
-                              const SizedBox(height: 12),
-                              Text(
-                                stock == 0 ? 'OUT OF STOCK' : 'LOW STOCK',
-                                style: TextStyle(
-                                  color: Theme.of(context).colorScheme.primary,
-                                  fontWeight: FontWeight.w800,
+                                    const SizedBox(height: 12),
+                                    TextButton(
+                                      onPressed: _clearFilters,
+                                      child: const Text(
+                                        'Clear search & filters',
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                            ],
-                            const SizedBox(height: 16),
-                            OutlinedButton.icon(
-                              onPressed: () {
-                                showDialog<void>(
-                                  context: context,
-                                  barrierDismissible: false,
-                                  builder: (_) => _RestockDialog(
-                                    reference: part.reference,
-                                    name: data['name'] as String,
+                            )
+                          : ListView.separated(
+                              padding: const EdgeInsets.fromLTRB(
+                                16,
+                                0,
+                                16,
+                                100,
+                              ),
+                              itemCount: visibleParts.length,
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(height: 12),
+                              itemBuilder: (context, index) {
+                                final part = visibleParts[index];
+                                final data = part.data();
+
+                                final stock = data['stock'] as int;
+                                final minimum = data['minStock'] as int;
+
+                                final lowStock = stock <= minimum;
+
+                                return Card(
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(18),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Icon(
+                                              Icons.inventory_2_outlined,
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .primary,
+                                            ),
+                                            const SizedBox(width: 12),
+                                            Expanded(
+                                              child: Text(
+                                                data['name'] as String,
+                                                style: const TextStyle(
+                                                  fontSize: 19,
+                                                  fontWeight: FontWeight.w800,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+
+                                        const SizedBox(height: 12),
+
+                                        Text('Code: ${part.id}'),
+
+                                        const SizedBox(height: 8),
+
+                                        Text(
+                                          'Unit price: LKR '
+                                          '${formatPartPrice(data['unitPriceCents'] as int)}',
+                                        ),
+
+                                        const SizedBox(height: 8),
+
+                                        Text(
+                                          'Available: $stock'
+                                          ' • Minimum: $minimum',
+                                        ),
+
+                                        if (lowStock) ...[
+                                          const SizedBox(height: 12),
+                                          Row(
+                                            children: [
+                                              Icon(
+                                                Icons.warning_amber_rounded,
+                                                size: 20,
+                                                color: Theme.of(context)
+                                                    .colorScheme
+                                                    .primary,
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Text(
+                                                stock == 0
+                                                    ? 'OUT OF STOCK'
+                                                    : 'LOW STOCK',
+                                                style: TextStyle(
+                                                  color: Theme.of(context)
+                                                      .colorScheme
+                                                      .primary,
+                                                  fontWeight: FontWeight.w800,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+
+                                        const SizedBox(height: 16),
+
+                                        OutlinedButton.icon(
+                                          onPressed: () {
+                                            showDialog<void>(
+                                              context: context,
+                                              barrierDismissible: false,
+                                              builder: (_) => _RestockDialog(
+                                                reference: part.reference,
+                                                name: data['name'] as String,
+                                              ),
+                                            );
+                                          },
+                                          icon: const Icon(
+                                            Icons.add_box_outlined,
+                                          ),
+                                          label: const Text('Add Stock'),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 );
                               },
-                              icon: const Icon(Icons.add_box_outlined),
-                              label: const Text('Add Stock'),
                             ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
+                    ),
+                  ],
                 );
               },
             ),
@@ -220,7 +381,9 @@ class _AddPartScreenState extends State<AddPartScreen> {
   }
 
   Future<void> _save() async {
-    if (_saving || !_formKey.currentState!.validate()) return;
+    if (_saving || !_formKey.currentState!.validate()) {
+      return;
+    }
 
     FocusScope.of(context).unfocus();
 
@@ -244,7 +407,8 @@ class _AddPartScreenState extends State<AddPartScreen> {
 
         if (existing.exists) {
           throw StateError(
-            'This part code already exists. Use Add Stock instead.',
+            'This part code already exists. '
+            'Use Add Stock instead.',
           );
         }
 
@@ -259,22 +423,28 @@ class _AddPartScreenState extends State<AddPartScreen> {
       });
 
       if (!mounted) return;
+
       Navigator.of(context).pop();
     } on StateError catch (error) {
-      if (!mounted) return;
-      _message('${error.message}');
+      if (mounted) {
+        _message('${error.message}');
+      }
     } on FirebaseException catch (error) {
       if (!mounted) return;
+
       _message(
         error.code == 'permission-denied'
             ? 'Check your UID and spareParts rules.'
             : 'Unable to save part. Check your connection.',
       );
     } catch (_) {
-      if (!mounted) return;
-      _message('Unable to save part. Please try again.');
+      if (mounted) {
+        _message('Unable to save part. Please try again.');
+      }
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) {
+        setState(() => _saving = false);
+      }
     }
   }
 
@@ -311,6 +481,7 @@ class _AddPartScreenState extends State<AddPartScreen> {
     _price.dispose();
     _stock.dispose();
     _minimum.dispose();
+
     super.dispose();
   }
 
@@ -347,6 +518,7 @@ class _AddPartScreenState extends State<AddPartScreen> {
                               : 'Use letters, numbers, - or _ only.';
                         },
                       ),
+
                       _field(
                         controller: _name,
                         label: 'Part name',
@@ -357,6 +529,7 @@ class _AddPartScreenState extends State<AddPartScreen> {
                               : null;
                         },
                       ),
+
                       _field(
                         controller: _price,
                         label: 'Selling price per unit (LKR)',
@@ -369,18 +542,21 @@ class _AddPartScreenState extends State<AddPartScreen> {
                               : null;
                         },
                       ),
+
                       _field(
                         controller: _stock,
                         label: 'Opening stock quantity',
                         keyboard: TextInputType.number,
                         validator: _quantityValidator,
                       ),
+
                       _field(
                         controller: _minimum,
                         label: 'Minimum stock alert level',
                         keyboard: TextInputType.number,
                         validator: _quantityValidator,
                       ),
+
                       FilledButton.icon(
                         onPressed: _saving ? null : _save,
                         icon: const Icon(Icons.save_outlined),
@@ -416,9 +592,13 @@ class _RestockDialogState extends State<_RestockDialog> {
   String? _error;
 
   Future<void> _save() async {
-    if (_saving || !_formKey.currentState!.validate()) return;
+    if (_saving || !_formKey.currentState!.validate()) {
+      return;
+    }
 
     final quantity = int.parse(_quantity.text.trim());
+
+    FocusScope.of(context).unfocus();
 
     setState(() {
       _saving = true;
@@ -430,6 +610,7 @@ class _RestockDialogState extends State<_RestockDialog> {
         transaction,
       ) async {
         final snapshot = await transaction.get(widget.reference);
+
         final data = snapshot.data();
 
         if (data == null) {
@@ -449,23 +630,28 @@ class _RestockDialogState extends State<_RestockDialog> {
       });
 
       if (!mounted) return;
+
       Navigator.of(context).pop();
     } on StateError catch (error) {
-      if (mounted) setState(() => _error = '${error.message}');
-    } on FirebaseException catch (error) {
       if (mounted) {
-        setState(() {
-          _error = error.code == 'permission-denied'
-              ? 'Permission denied. Check inventory rules.'
-              : 'Check your connection and try again.';
-        });
+        setState(() => _error = '${error.message}');
       }
+    } on FirebaseException catch (error) {
+      if (!mounted) return;
+
+      setState(() {
+        _error = error.code == 'permission-denied'
+            ? 'Permission denied. Check inventory rules.'
+            : 'Check your connection and try again.';
+      });
     } catch (_) {
       if (mounted) {
         setState(() => _error = 'Unable to add stock.');
       }
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) {
+        setState(() => _saving = false);
+      }
     }
   }
 
@@ -481,37 +667,44 @@ class _RestockDialogState extends State<_RestockDialog> {
       canPop: !_saving,
       child: AlertDialog(
         title: const Text('Add Stock'),
-        content: Form(
-          key: _formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(widget.name),
-              const SizedBox(height: 18),
-              TextFormField(
-                controller: _quantity,
-                enabled: !_saving,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Quantity received',
-                ),
-                validator: (value) {
-                  final quantity = int.tryParse(value?.trim() ?? '');
+        content: SingleChildScrollView(
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(widget.name),
 
-                  return quantity == null || quantity < 1 || quantity > 100000
-                      ? 'Enter a whole number from 1 to 100000.'
-                      : null;
-                },
-              ),
-              if (_error != null) ...[
-                const SizedBox(height: 12),
-                Text(
-                  _error!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                const SizedBox(height: 18),
+
+                TextFormField(
+                  controller: _quantity,
+                  enabled: !_saving,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Quantity received',
+                  ),
+                  validator: (value) {
+                    final quantity = int.tryParse(value?.trim() ?? '');
+
+                    return quantity == null || quantity < 1 || quantity > 100000
+                        ? 'Enter a whole number from 1 to 100000.'
+                        : null;
+                  },
                 ),
+
+                if (_error != null) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    _error!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
         actions: [

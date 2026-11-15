@@ -14,7 +14,12 @@ class VehiclesScreen extends StatefulWidget {
 }
 
 class _VehiclesScreenState extends State<VehiclesScreen> {
+  final _searchController = TextEditingController();
+
   late final Stream<QuerySnapshot<Map<String, dynamic>>> _vehicles;
+
+  String _query = '';
+  String? _brandFilter;
 
   @override
   void initState() {
@@ -28,6 +33,45 @@ class _VehiclesScreenState extends State<VehiclesScreen> {
 
   void _open(Widget screen) {
     Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
+  }
+
+  void _clearFilters() {
+    _searchController.clear();
+
+    setState(() {
+      _query = '';
+      _brandFilter = null;
+    });
+  }
+
+  String _normaliseRegistration(String value) {
+    return value.toLowerCase().replaceAll(RegExp(r'[\s-]'), '');
+  }
+
+  bool _matchesSearch(Map<String, dynamic> data) {
+    if (_query.isEmpty) return true;
+
+    final registration = (data['registration'] as String? ?? '').toLowerCase();
+
+    final brand = (data['brand'] as String? ?? '').toLowerCase();
+
+    final model = (data['model'] as String? ?? '').toLowerCase();
+
+    final combined = '$registration $brand $model';
+
+    if (combined.contains(_query)) return true;
+
+    // CAA1234 also matches CAA-1234.
+    final compactQuery = _normaliseRegistration(_query);
+
+    return compactQuery.isNotEmpty &&
+        _normaliseRegistration(registration).contains(compactQuery);
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   @override
@@ -46,6 +90,7 @@ class _VehiclesScreenState extends State<VehiclesScreen> {
           const SizedBox(width: 8),
         ],
       ),
+
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () {
           _open(const AddVehicleScreen());
@@ -53,146 +98,310 @@ class _VehiclesScreenState extends State<VehiclesScreen> {
         icon: const Icon(Icons.add),
         label: const Text('Add Vehicle'),
       ),
-      body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: _vehicles,
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return const Center(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Text(
-                  'Unable to load vehicles. '
-                  'Check your connection and permissions.',
-                  textAlign: TextAlign.center,
-                ),
+
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: 'Vehicle number, brand or model',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _searchController.text.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: 'Clear search',
+                        onPressed: () {
+                          _searchController.clear();
+
+                          setState(() => _query = '');
+                        },
+                        icon: const Icon(Icons.close),
+                      ),
               ),
-            );
-          }
+              onChanged: (value) {
+                setState(() {
+                  _query = value.trim().toLowerCase();
+                });
+              },
+            ),
+          ),
 
-          if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
+          Expanded(
+            child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: _vehicles,
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Text(
+                        'Unable to load vehicles. '
+                        'Check your connection and permissions.',
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  );
+                }
 
-          final vehicles = snapshot.data!.docs;
+                if (!snapshot.hasData) {
+                  return const Center(child: CircularProgressIndicator());
+                }
 
-          if (vehicles.isEmpty) {
-            return const Center(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Text(
-                  'No vehicles yet.\nTap Add Vehicle to begin.',
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            );
-          }
+                final allVehicles = snapshot.data!.docs;
 
-          return ListView.separated(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-            itemCount: vehicles.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 14),
-            itemBuilder: (context, index) {
-              final vehicle = vehicles[index];
-              final data = vehicle.data();
+                if (allVehicles.isEmpty) {
+                  return const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Text(
+                        'No vehicles yet.\n'
+                        'Tap Add Vehicle to begin.',
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  );
+                }
 
-              final registration = data['registration'] as String? ?? '';
+                // One filter per brand, ignoring capitalisation.
+                final brands = <String, String>{};
 
-              final brand = data['brand'] as String? ?? '';
+                for (final vehicle in allVehicles) {
+                  final brand = (vehicle.data()['brand'] as String? ?? '')
+                      .trim();
 
-              final model = data['model'] as String? ?? '';
+                  if (brand.isNotEmpty) {
+                    brands.putIfAbsent(brand.toLowerCase(), () => brand);
+                  }
+                }
 
-              return Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(18),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Row(
+                final brandKeys = brands.keys.toList()..sort();
+
+                final effectiveBrand = brands.containsKey(_brandFilter)
+                    ? _brandFilter
+                    : null;
+
+                final visibleVehicles = allVehicles.where((vehicle) {
+                  final data = vehicle.data();
+
+                  final brand = (data['brand'] as String? ?? '')
+                      .trim()
+                      .toLowerCase();
+
+                  final matchesBrand =
+                      effectiveBrand == null || brand == effectiveBrand;
+
+                  return matchesBrand && _matchesSearch(data);
+                }).toList();
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      child: Row(
                         children: [
-                          CircleAvatar(
-                            radius: 25,
-                            child: Icon(
-                              Icons.directions_car_outlined,
-                              color: Theme.of(context).colorScheme.primary,
-                              size: 27,
+                          Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: ChoiceChip(
+                              label: const Text('All brands'),
+                              selected: effectiveBrand == null,
+                              onSelected: (_) {
+                                setState(() {
+                                  _brandFilter = null;
+                                });
+                              },
                             ),
                           ),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  registration,
-                                  style: const TextStyle(
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.w800,
+
+                          ...brandKeys.map((key) {
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 8),
+                              child: ChoiceChip(
+                                label: Text(brands[key]!),
+                                selected: effectiveBrand == key,
+                                onSelected: (_) {
+                                  setState(() {
+                                    _brandFilter = key;
+                                  });
+                                },
+                              ),
+                            );
+                          }),
+                        ],
+                      ),
+                    ),
+
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(18, 4, 18, 12),
+                      child: Text(
+                        '${visibleVehicles.length} of '
+                        '${allVehicles.length} vehicles',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+
+                    Expanded(
+                      child: visibleVehicles.isEmpty
+                          ? Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(24),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.search_off, size: 48),
+                                    const SizedBox(height: 14),
+                                    const Text(
+                                      'No matching vehicles.',
+                                      textAlign: TextAlign.center,
+                                    ),
+                                    const SizedBox(height: 12),
+                                    TextButton(
+                                      onPressed: _clearFilters,
+                                      child: const Text(
+                                        'Clear search & filters',
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            )
+                          : ListView.separated(
+                              padding: const EdgeInsets.fromLTRB(
+                                16,
+                                0,
+                                16,
+                                100,
+                              ),
+                              itemCount: visibleVehicles.length,
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(height: 14),
+                              itemBuilder: (context, index) {
+                                final vehicle = visibleVehicles[index];
+
+                                final data = vehicle.data();
+
+                                final registration =
+                                    data['registration'] as String? ?? '';
+
+                                final brand = data['brand'] as String? ?? '';
+
+                                final model = data['model'] as String? ?? '';
+
+                                return Card(
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(18),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            CircleAvatar(
+                                              radius: 25,
+                                              child: Icon(
+                                                Icons.directions_car_outlined,
+                                                color: Theme.of(context)
+                                                    .colorScheme
+                                                    .primary,
+                                                size: 27,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 14),
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    registration,
+                                                    style: const TextStyle(
+                                                      fontSize: 20,
+                                                      fontWeight:
+                                                          FontWeight.w800,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 6),
+                                                  Text('$brand $model'),
+                                                ],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+
+                                        const SizedBox(height: 20),
+
+                                        Wrap(
+                                          spacing: 10,
+                                          runSpacing: 12,
+                                          children: [
+                                            OutlinedButton.icon(
+                                              onPressed: () {
+                                                _open(
+                                                  VehicleBookingsScreen(
+                                                    vehicleId: vehicle.id,
+                                                    registration: registration,
+                                                  ),
+                                                );
+                                              },
+                                              icon: const Icon(
+                                                Icons.event_outlined,
+                                                size: 20,
+                                              ),
+                                              label: const Text('Bookings'),
+                                            ),
+
+                                            FilledButton.icon(
+                                              onPressed: () {
+                                                _open(
+                                                  JobCardsScreen(
+                                                    vehicleId: vehicle.id,
+                                                    registration: registration,
+                                                  ),
+                                                );
+                                              },
+                                              icon: const Icon(
+                                                Icons.assignment_outlined,
+                                                size: 20,
+                                              ),
+                                              label: const Text('Job Cards'),
+                                            ),
+
+                                            OutlinedButton.icon(
+                                              onPressed: () {
+                                                _open(
+                                                  ServiceHistoryScreen(
+                                                    vehicleId: vehicle.id,
+                                                    registration: registration,
+                                                  ),
+                                                );
+                                              },
+                                              icon: const Icon(
+                                                Icons.history_rounded,
+                                                size: 20,
+                                              ),
+                                              label: const Text('History'),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(height: 6),
-                                Text('$brand $model'),
-                              ],
+                                );
+                              },
                             ),
-                          ),
-                        ],
-                      ),
-
-                      const SizedBox(height: 20),
-
-                      Wrap(
-                        spacing: 10,
-                        runSpacing: 12,
-                        children: [
-                          OutlinedButton.icon(
-                            onPressed: () {
-                              _open(
-                                VehicleBookingsScreen(
-                                  vehicleId: vehicle.id,
-                                  registration: registration,
-                                ),
-                              );
-                            },
-                            icon: const Icon(Icons.event_outlined, size: 20),
-                            label: const Text('Bookings'),
-                          ),
-
-                          FilledButton.icon(
-                            onPressed: () {
-                              _open(
-                                JobCardsScreen(
-                                  vehicleId: vehicle.id,
-                                  registration: registration,
-                                ),
-                              );
-                            },
-                            icon: const Icon(
-                              Icons.assignment_outlined,
-                              size: 20,
-                            ),
-                            label: const Text('Job Cards'),
-                          ),
-
-                          OutlinedButton.icon(
-                            onPressed: () {
-                              _open(
-                                ServiceHistoryScreen(
-                                  vehicleId: vehicle.id,
-                                  registration: registration,
-                                ),
-                              );
-                            },
-                            icon: const Icon(Icons.history_rounded, size: 20),
-                            label: const Text('History'),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          );
-        },
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -217,7 +426,6 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
   late final Future<QuerySnapshot<Map<String, dynamic>>> _customers;
 
   String? _customerId;
-
   bool _saving = false;
 
   @override
@@ -292,11 +500,7 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
         textInputAction: TextInputAction.next,
         decoration: InputDecoration(labelText: label),
         validator: (value) {
-          if (value == null || value.trim().isEmpty) {
-            return 'Enter $label.';
-          }
-
-          return null;
+          return value == null || value.trim().isEmpty ? 'Enter $label.' : null;
         },
       ),
     );
