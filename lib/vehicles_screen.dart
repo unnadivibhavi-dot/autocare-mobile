@@ -4,11 +4,29 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'bookings_screen.dart';
 import 'job_cards_screen.dart';
 import 'inventory_screen.dart';
+import 'service_history_screen.dart';
 
-class VehiclesScreen extends StatelessWidget {
+class VehiclesScreen extends StatefulWidget {
   const VehiclesScreen({super.key});
 
-  void _open(BuildContext context, Widget screen) {
+  @override
+  State<VehiclesScreen> createState() => _VehiclesScreenState();
+}
+
+class _VehiclesScreenState extends State<VehiclesScreen> {
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _vehicles;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _vehicles = FirebaseFirestore.instance
+        .collection('vehicles')
+        .orderBy('createdAt', descending: true)
+        .snapshots();
+  }
+
+  void _open(Widget screen) {
     Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
   }
 
@@ -20,26 +38,34 @@ class VehiclesScreen extends StatelessWidget {
         actions: [
           IconButton(
             tooltip: 'Spare Parts Inventory',
-            onPressed: () => _open(context, const InventoryScreen()),
+            onPressed: () {
+              _open(const InventoryScreen());
+            },
             icon: const Icon(Icons.inventory_2_outlined),
           ),
           const SizedBox(width: 8),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _open(context, const AddVehicleScreen()),
+        onPressed: () {
+          _open(const AddVehicleScreen());
+        },
         icon: const Icon(Icons.add),
         label: const Text('Add Vehicle'),
       ),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: FirebaseFirestore.instance
-            .collection('vehicles')
-            .orderBy('createdAt', descending: true)
-            .snapshots(),
+        stream: _vehicles,
         builder: (context, snapshot) {
           if (snapshot.hasError) {
             return const Center(
-              child: Text('Unable to load vehicles. Check permissions.'),
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Text(
+                  'Unable to load vehicles. '
+                  'Check your connection and permissions.',
+                  textAlign: TextAlign.center,
+                ),
+              ),
             );
           }
 
@@ -51,31 +77,44 @@ class VehiclesScreen extends StatelessWidget {
 
           if (vehicles.isEmpty) {
             return const Center(
-              child: Text('No vehicles yet. Tap Add Vehicle.'),
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Text(
+                  'No vehicles yet.\nTap Add Vehicle to begin.',
+                  textAlign: TextAlign.center,
+                ),
+              ),
             );
           }
 
           return ListView.separated(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
             itemCount: vehicles.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 12),
+            separatorBuilder: (_, __) => const SizedBox(height: 14),
             itemBuilder: (context, index) {
               final vehicle = vehicles[index];
               final data = vehicle.data();
+
               final registration = data['registration'] as String? ?? '';
+
+              final brand = data['brand'] as String? ?? '';
+
+              final model = data['model'] as String? ?? '';
 
               return Card(
                 child: Padding(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(18),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Row(
                         children: [
                           CircleAvatar(
+                            radius: 25,
                             child: Icon(
                               Icons.directions_car_outlined,
                               color: Theme.of(context).colorScheme.primary,
+                              size: 27,
                             ),
                           ),
                           const SizedBox(width: 14),
@@ -86,46 +125,64 @@ class VehiclesScreen extends StatelessWidget {
                                 Text(
                                   registration,
                                   style: const TextStyle(
-                                    fontSize: 19,
+                                    fontSize: 20,
                                     fontWeight: FontWeight.w800,
                                   ),
                                 ),
-                                const SizedBox(height: 5),
-                                Text(
-                                  '${data['brand'] ?? ''} '
-                                  '${data['model'] ?? ''}',
-                                ),
+                                const SizedBox(height: 6),
+                                Text('$brand $model'),
                               ],
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 18),
+
+                      const SizedBox(height: 20),
+
                       Wrap(
-                        spacing: 12,
-                        runSpacing: 10,
+                        spacing: 10,
+                        runSpacing: 12,
                         children: [
                           OutlinedButton.icon(
-                            onPressed: () => _open(
-                              context,
-                              VehicleBookingsScreen(
-                                vehicleId: vehicle.id,
-                                registration: registration,
-                              ),
-                            ),
-                            icon: const Icon(Icons.event_outlined),
+                            onPressed: () {
+                              _open(
+                                VehicleBookingsScreen(
+                                  vehicleId: vehicle.id,
+                                  registration: registration,
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.event_outlined, size: 20),
                             label: const Text('Bookings'),
                           ),
+
                           FilledButton.icon(
-                            onPressed: () => _open(
-                              context,
-                              JobCardsScreen(
-                                vehicleId: vehicle.id,
-                                registration: registration,
-                              ),
+                            onPressed: () {
+                              _open(
+                                JobCardsScreen(
+                                  vehicleId: vehicle.id,
+                                  registration: registration,
+                                ),
+                              );
+                            },
+                            icon: const Icon(
+                              Icons.assignment_outlined,
+                              size: 20,
                             ),
-                            icon: const Icon(Icons.assignment_outlined),
                             label: const Text('Job Cards'),
+                          ),
+
+                          OutlinedButton.icon(
+                            onPressed: () {
+                              _open(
+                                ServiceHistoryScreen(
+                                  vehicleId: vehicle.id,
+                                  registration: registration,
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.history_rounded, size: 20),
+                            label: const Text('History'),
                           ),
                         ],
                       ),
@@ -150,6 +207,7 @@ class AddVehicleScreen extends StatefulWidget {
 
 class _AddVehicleScreenState extends State<AddVehicleScreen> {
   final _formKey = GlobalKey<FormState>();
+
   final _registration = TextEditingController();
   final _brand = TextEditingController();
   final _model = TextEditingController();
@@ -159,6 +217,7 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
   late final Future<QuerySnapshot<Map<String, dynamic>>> _customers;
 
   String? _customerId;
+
   bool _saving = false;
 
   @override
@@ -172,9 +231,12 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
   }
 
   Future<void> _save() async {
-    if (_saving || !_formKey.currentState!.validate()) return;
+    if (_saving || !_formKey.currentState!.validate()) {
+      return;
+    }
 
     FocusScope.of(context).unfocus();
+
     setState(() => _saving = true);
 
     try {
@@ -187,6 +249,7 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
       });
 
       if (!mounted) return;
+
       Navigator.of(context).pop();
     } on FirebaseException catch (error) {
       if (!mounted) return;
@@ -203,15 +266,23 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
     } catch (_) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Unable to save vehicle.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unable to save vehicle. Please try again.'),
+        ),
+      );
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) {
+        setState(() => _saving = false);
+      }
     }
   }
 
-  Widget _field(TextEditingController controller, String label, int maxLength) {
+  Widget _field({
+    required TextEditingController controller,
+    required String label,
+    required int maxLength,
+  }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: TextFormField(
@@ -221,7 +292,11 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
         textInputAction: TextInputAction.next,
         decoration: InputDecoration(labelText: label),
         validator: (value) {
-          return value == null || value.trim().isEmpty ? 'Enter $label.' : null;
+          if (value == null || value.trim().isEmpty) {
+            return 'Enter $label.';
+          }
+
+          return null;
         },
       ),
     );
@@ -232,6 +307,7 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
     _registration.dispose();
     _brand.dispose();
     _model.dispose();
+
     super.dispose();
   }
 
@@ -252,8 +328,9 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
                 child: Padding(
                   padding: EdgeInsets.all(24),
                   child: Text(
-                    'Unable to load customers. Check your connection '
-                    'and permissions, then reopen this screen.',
+                    'Unable to load customers. '
+                    'Check your connection and permissions, '
+                    'then reopen this screen.',
                     textAlign: TextAlign.center,
                   ),
                 ),
@@ -268,7 +345,13 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
 
             if (customers.isEmpty) {
               return const Center(
-                child: Text('Add a customer before registering a vehicle.'),
+                child: Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Text(
+                    'Add a customer before registering a vehicle.',
+                    textAlign: TextAlign.center,
+                  ),
+                ),
               );
             }
 
@@ -287,6 +370,7 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
                             isExpanded: true,
                             decoration: const InputDecoration(
                               labelText: 'Vehicle owner',
+                              prefixIcon: Icon(Icons.person_outline),
                             ),
                             items: customers.map((customer) {
                               final data = customer.data();
@@ -302,7 +386,9 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
                             onChanged: _saving
                                 ? null
                                 : (value) {
-                                    setState(() => _customerId = value);
+                                    setState(() {
+                                      _customerId = value;
+                                    });
                                   },
                             validator: (value) {
                               return value == null
@@ -310,14 +396,27 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
                                   : null;
                             },
                           ),
+
                           const SizedBox(height: 20),
+
                           _field(
-                            _registration,
-                            'Vehicle registration number',
-                            30,
+                            controller: _registration,
+                            label: 'Vehicle registration number',
+                            maxLength: 30,
                           ),
-                          _field(_brand, 'Brand', 60),
-                          _field(_model, 'Model', 60),
+
+                          _field(
+                            controller: _brand,
+                            label: 'Brand',
+                            maxLength: 60,
+                          ),
+
+                          _field(
+                            controller: _model,
+                            label: 'Model',
+                            maxLength: 60,
+                          ),
+
                           FilledButton.icon(
                             onPressed: _saving ? null : _save,
                             icon: _saving
